@@ -97,6 +97,34 @@ const initDatabase = async () => {
         created_at TEXT
       )
     `)
+
+    // PayPayフリマ 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS paypay_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // Yahoo!ショッピング 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS yahoo_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
     
     // 初始化示例数据（如果为空）
     const diamondCount = db.exec('SELECT COUNT(*) as count FROM diamonds')[0]?.values[0][0] || 0
@@ -241,6 +269,83 @@ const fetchRakumaData = async (keyword = 'アクセサリー') => {
     return items
   } catch (error) {
     console.error('ラクマ爬取失败:', error.message)
+    return []
+  }
+}
+
+// PayPayフリマ 爬虫
+const fetchPaypayData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://paypayfleamarket.yahoo.co.jp/search?keyword=${encodeURIComponent(keyword)}&sort=sold`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    
+    const itemPattern = /data-item-id="(\d+)"[^>]*>[\s\S]*?class="[^"]*itemName[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g
+    let match
+    let rank = 1
+    
+    while ((match = itemPattern.exec(html)) !== null && rank <= 30) {
+      const itemId = match[1]
+      const productName = match[2].trim()
+      const price = parseInt(match[3].replace(/\D/g, ''))
+      items.push({ rank: rank++, itemId, productName, brand: 'OTHER', price, category: 'accessories', url: `https://paypayfleamarket.yahoo.co.jp/items/${itemId}` })
+    }
+    
+    console.log(`PayPayフリマ爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('PayPayフリマ爬取失败:', error.message)
+    return []
+  }
+}
+
+// Yahoo!ショッピング 爬虫
+const fetchYahooShoppingData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://shopping.yahoo.co.jp/search?p=${encodeURIComponent(keyword)}&sort=sold`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Yahoo商品匹配
+    const patterns = [
+      /class="[^"]*Product[^"]*_name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+,?\d*)\s*円/g,
+      /class="[^"]*Item[^"]*Name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+,?\d*)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const productName = match[1].trim()
+        const price = parseInt(match[2].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName)) {
+          items.push({ rank: rank++, productName, brand: 'OTHER', price, category: 'accessories', url: '' })
+        }
+      }
+    }
+    
+    console.log(`Yahoo!ショッピング爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('Yahoo!ショッピング爬取失败:', error.message)
     return []
   }
 }
@@ -767,6 +872,96 @@ app.post('/api/rakuma/refresh/:month', async (req, res) => {
     
     saveDatabase()
     res.json({ success: true, count: items.length, month, platform: 'ラクマ' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// PayPayフリマ API
+// ============================================
+app.get('/api/paypay', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM paypay_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/paypay/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM paypay_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/paypay/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchPaypayData(keyword || 'アクセサリー')
+    db.run('DELETE FROM paypay_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO paypay_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'PayPayフリマ' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// Yahoo!ショッピング API
+// ============================================
+app.get('/api/yahoo', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM yahoo_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/yahoo/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM yahoo_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/yahoo/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchYahooShoppingData(keyword || 'アクセサリー')
+    db.run('DELETE FROM yahoo_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO yahoo_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'Yahoo!ショッピング' })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
