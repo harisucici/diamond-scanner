@@ -100,7 +100,9 @@
           title="点击查看商品详情"
         >
           <div class="card-rank">{{ item.rank }}</div>
-          <img v-if="item.image" :src="item.image" :alt="item.productName" class="card-image" />
+          <div class="card-image-wrap">
+            <img v-if="item.image" :src="item.image" :alt="item.productName" class="card-image" />
+          </div>
           <div class="card-content">
             <div class="card-website">{{ item.website }}</div>
             <h3 class="card-product">{{ item.productName }}</h3>
@@ -317,16 +319,26 @@ export default {
 .rank-1 { background: #ffd700; }.rank-2 { background: #c0c0c0; }.rank-3 { background: #cd7f32; }
 .rank-4, .rank-5, .rank-6, .rank-7, .rank-8, .rank-9, .rank-10 { background: linear-gradient(135deg, #667eea, #764ba2); }
 .sales { font-weight: bold; color: #667eea; }
-.card-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
-.product-card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 20px; position: relative; transition: all 0.3s ease; }
-.product-card:hover { transform: translateY(-8px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); border-color: rgba(0,212,255,0.4); }
-.product-card.rank-1 { border-color: rgba(255,215,0,0.5); box-shadow: 0 0 30px rgba(255,215,0,0.2); }.product-card.rank-2 { border-color: rgba(192,192,192,0.5); }.product-card.rank-3 { border-color: rgba(205,127,50,0.5); }
-.card-rank { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 1; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+.card-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.product-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; position: relative; overflow: hidden; transition: all 0.3s ease; }
+.product-card:hover { transform: translateY(-6px); box-shadow: 0 16px 40px rgba(0,0,0,0.4); border-color: rgba(0,212,255,0.3); }
+.product-card.rank-1 { border-color: rgba(255,215,0,0.4); box-shadow: 0 0 25px rgba(255,215,0,0.15); }.product-card.rank-2 { border-color: rgba(192,192,192,0.4); }.product-card.rank-3 { border-color: rgba(205,127,50,0.4); }
+
+.card-rank { position: absolute; top: 10px; left: 10px; width: 32px; height: 32px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 .product-card.rank-1 .card-rank { background: linear-gradient(135deg, #ffd700, #ffb700); color: #1a1a2e; }
-.card-image { width: 100%; height: 180px; object-fit: cover; border-radius: 12px; margin-bottom: 12px; }
-.card-website { font-size: 0.85rem; color: #667eea; margin-bottom: 8px; }
-.card-product { font-size: 1rem; margin: 8px 0; color: #fff; }
-.card-brand, .card-price, .card-sales { margin: 6px 0; color: rgba(255,255,255,0.7); font-size: 0.9rem; }
+.product-card.rank-2 .card-rank { background: linear-gradient(135deg, #c0c0c0, #a8a8a8); color: #1a1a2e; }
+.product-card.rank-3 .card-rank { background: linear-gradient(135deg, #cd7f32, #b87333); color: #fff; }
+
+.card-image-wrap { position: relative; overflow: hidden; }
+.card-image { width: 100%; height: 160px; object-fit: cover; transition: transform 0.3s ease; }
+.product-card:hover .card-image { transform: scale(1.05); }
+
+.card-content { padding: 14px; }
+.card-website { font-size: 0.7rem; color: #00d4ff; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.card-product { font-size: 0.85rem; margin: 6px 0; color: #fff; line-height: 1.4; min-height: 36px; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-brand { color: #a855f7; font-size: 0.75rem; font-weight: 500; margin-bottom: 8px; }
+.card-price { color: #00d4ff; font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+.card-sales { color: rgba(255,255,255,0.4); font-size: 0.7rem; }
 .chart-view { padding: 20px; }
 .chart-container { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); }
 .chart-container h3 { margin-bottom: 15px; color: #fff; }
