@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diamond Scanner - Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+        }
+        .status {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 10px 5px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .data {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💎 Diamond Scanner - 测试页面</h1>
+        <p>这是一个简单的测试页面，直接测试后端API。</p>
+        
+        <div class="status">
+            <h3>API状态</h3>
+            <p id="apiStatus">点击按钮测试API...</p>
+        </div>
+        
+        <button onclick="testApi()">测试API连接</button>
+        <button onclick="testHealth()">测试健康检查</button>
+        <button onclick="getDiamonds()">获取钻石数据</button>
+        <button onclick="addDiamond()">添加示例钻石</button>
+        
+        <div class="data">
+            <h3>数据响应</h3>
+            <pre id="responseData">等待操作...</pre>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        
+        async function testApi() {
+            try {
+                const response = await fetch(API_BASE + '/test');
+                const data = await response.json();
+                document.getElementById('apiStatus').textContent = `✅ API正常: ${data.message}`;
+                document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = `❌ API错误: ${error.message}`;
+                document.getElementById('responseData').textContent = error.toString();
+            }
+        }
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(API_BASE + '/health');
+                const data = await response.json();
+                document.getElementById('apiStatus').textContent = `✅ 数据库正常: ${data.diamondsCount} 条记录`;
+                document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = `❌ 健康检查失败: ${error.message}`;
+                document.getElementById('responseData').textContent = error.toString();
+            }
+        }
+        
+        async function getDiamonds() {
+            try {
+                const response = await fetch(API_BASE + '/diamonds');
+                const data = await response.json();
+                document.getElementById('apiStatus').textContent = `✅ 获取到 ${data.length} 条钻石记录`;
+                document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = `❌ 获取数据失败: ${error.message}`;
+                document.getElementById('responseData').textContent = error.toString();
+            }
+        }
+        
+        async function addDiamond() {
+            try {
+                const response = await fetch(API_BASE + '/diamonds', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        carat: 1.0,
+                        color: 'H',
+                        clarity: 'VS2',
+                        price: 6000
+                    })
+                });
+                const data = await response.json();
+                document.getElementById('apiStatus').textContent = `✅ 添加成功: ${data.message || '钻石已添加'}`;
+                document.getElementById('responseData').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = `❌ 添加失败: ${error.message}`;
+                document.getElementById('responseData').textContent = error.toString();
+            }
+        }
+        
+        // 页面加载时测试API
+        window.onload = testApi;
+    </script>
+</body>
+</html>

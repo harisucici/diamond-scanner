@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Diamond Scanner - 直接测试</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .api-test { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>💎 Diamond Scanner - 直接HTML测试</h1>
+    <p>这个页面直接测试后端API，不依赖Vue.js构建。</p>
+    
+    <div class="api-test">
+        <h3>API测试</h3>
+        <button onclick="testApi()">测试API</button>
+        <button onclick="testHealth()">健康检查</button>
+        <button onclick="getDiamonds()">获取数据</button>
+        <button onclick="addDiamond()">添加数据</button>
+    </div>
+    
+    <div>
+        <h3>响应:</h3>
+        <pre id="output">点击按钮开始测试...</pre>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        
+        function log(message) {
+            document.getElementById('output').textContent = message;
+            console.log(message);
+        }
+        
+        async function testApi() {
+            try {
+                const response = await fetch(API_BASE + '/test');
+                const data = await response.json();
+                log(`✅ API测试成功:\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                log(`❌ API测试失败: ${error.message}`);
+            }
+        }
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(API_BASE + '/health');
+                const data = await response.json();
+                log(`✅ 健康检查成功:\n数据库: ${data.message}\n记录数: ${data.diamondsCount}\n存储: ${data.storage}`);
+            } catch (error) {
+                log(`❌ 健康检查失败: ${error.message}`);
+            }
+        }
+        
+        async function getDiamonds() {
+            try {
+                const response = await fetch(API_BASE + '/diamonds');
+                const data = await response.json();
+                log(`✅ 获取到 ${data.length} 条记录:\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                log(`❌ 获取数据失败: ${error.message}`);
+            }
+        }
+        
+        async function addDiamond() {
+            try {
+                const response = await fetch(API_BASE + '/diamonds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        carat: 1.5,
+                        color: 'D',
+                        clarity: 'IF',
+                        price: 15000
+                    })
+                });
+                const data = await response.json();
+                log(`✅ 添加成功:\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                log(`❌ 添加失败: ${error.message}`);
+            }
+        }
+        
+        // 自动测试
+        window.onload = testApi;
+    </script>
+</body>
+</html>
