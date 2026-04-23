@@ -183,9 +183,51 @@ const initDatabase = async () => {
       )
     `)
 
-    // 价格.com 产品表
+    // 價格.com 产品表
     db.run(`
       CREATE TABLE IF NOT EXISTS kakaku_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // 樂天产品表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS rakuten_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // Mercari产品表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS mercari_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // Yahoo!拍賣产品表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS yahoo_auction_products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         rank INTEGER,
         month TEXT,
@@ -607,6 +649,156 @@ const fetchDMMData = async (keyword = 'アクセサリー') => {
     return items
   } catch (error) {
     console.error('DMM爬取失败:', error.message)
+    return []
+  }
+}
+
+// 樂天市場 (Rakuten) 爬虫
+const fetchRakutenData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://search.rakuten.co.jp/search/mall/${encodeURIComponent(keyword)}/?s=2`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // 樂天商品匹配
+    const patterns = [
+      /href="(//item\.rakuten\.co\.jp/\d+/)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)/g,
+      /data-item-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*item-name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const url = match[1] || ''
+        const productName = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName) && price > 0) {
+          items.push({ 
+            rank: rank++, 
+            productName, 
+            brand: 'OTHER', 
+            price, 
+            category: 'accessories', 
+            url: url ? `https:${url}` : '' 
+          })
+        }
+      }
+    }
+    
+    console.log(`樂天爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('樂天爬取失败:', error.message)
+    return []
+  }
+}
+
+// Mercari (メルカリ) 爬虫
+const fetchMercariData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}&sort= sold_count:desc`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Mercari商品匹配
+    const patterns = [
+      /href="(/item/m\d+)"[^>]*>[\s\S]*?class="[^"]*name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g,
+      /data-item-id="([^"]+)"[^>]*>[\s\S]*?>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const url = match[1] || ''
+        const productName = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName) && price > 0) {
+          items.push({ 
+            rank: rank++, 
+            productName, 
+            brand: 'OTHER', 
+            price, 
+            category: 'accessories', 
+            url: url ? `https://jp.mercari.com${url}` : '' 
+          })
+        }
+      }
+    }
+    
+    console.log(`Mercari爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('Mercari爬取失败:', error.message)
+    return []
+  }
+}
+
+// Yahoo!Auction 爬虫
+const fetchYahooAuctionData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}&n=30&s=jun`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Yahoo!Auction商品匹配
+    const patterns = [
+      /href="(//auctions\.yahoo\.co\.jp/item/[^\"]+)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)/g,
+      /data-auction-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*Product[^\"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const url = match[1] || ''
+        const productName = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName) && price > 0) {
+          items.push({ 
+            rank: rank++, 
+            productName, 
+            brand: 'OTHER', 
+            price, 
+            category: 'accessories', 
+            url: url ? `https:${url}` : '' 
+          })
+        }
+      }
+    }
+    
+    console.log(`Yahoo!拍賣爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('Yahoo!拍賣爬取失败:', error.message)
     return []
   }
 }
@@ -1427,6 +1619,135 @@ app.post('/api/kakaku/refresh/:month', async (req, res) => {
   }
 })
 
+// 樂天 API
+app.get('/api/rakuten', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM rakuten_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/rakuten/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM rakuten_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/rakuten/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchRakutenData(keyword || 'アクセサリー')
+    db.run('DELETE FROM rakuten_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO rakuten_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.url || '', now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: '樂天' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Mercari API
+app.get('/api/mercari', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM mercari_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/mercari/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM mercari_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/mercari/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchMercariData(keyword || 'アクセサリー')
+    db.run('DELETE FROM mercari_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO mercari_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.url || '', now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'Mercari' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Yahoo!Auction API
+app.get('/api/yahoo-auction', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM yahoo_auction_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/yahoo-auction/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM yahoo_auction_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/yahoo-auction/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchYahooAuctionData(keyword || 'アクセサリー')
+    db.run('DELETE FROM yahoo_auction_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO yahoo_auction_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.url || '', now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'Yahoo!拍賣' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // ============================================
 // 测试 API
 // ============================================
@@ -1446,11 +1767,9 @@ app.get('/api/sources/status', (req, res) => {
   
   const sources = [
     { id: 'buyma', name: 'BUYMA', table: 'necklaces' },
-    { id: 'kakaku', name: '価格.com', table: 'kakaku_products' },
-    { id: 'zozotown', name: 'ZOZOTOWN', table: 'zozotown_products' },
-    { id: 'rakuma', name: 'ラクマ', table: 'rakuma_products' },
-    { id: 'paypay', name: 'PayPay', table: 'paypay_products' },
-    { id: 'yahoo', name: 'Yahoo!', table: 'yahoo_products' }
+    { id: 'rakuten', name: '樂天', table: 'rakuten_products' },
+    { id: 'mercari', name: 'メルカリ', table: 'mercari_products' },
+    { id: 'yahoo-auction', name: 'Yahoo!拍賣', table: 'yahoo_auction_products' }
   ]
   
   const status = sources.map(s => {

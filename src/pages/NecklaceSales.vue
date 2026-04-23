@@ -178,11 +178,9 @@ export default {
     // 数据源配置 (默认只启用BUYMA)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'kakaku', name: '価格.com', icon: '💎', enabled: false, api: '/api/kakaku' },
-      { id: 'zozotown', name: 'ZOZOTOWN', icon: '👗', enabled: false, api: '/api/zozotown' },
-      { id: 'rakuma', name: 'ラクマ', icon: '🔄', enabled: false, api: '/api/rakuma' },
-      { id: 'paypay', name: 'PayPay', icon: '💰', enabled: false, api: '/api/paypay' },
-      { id: 'yahoo', name: 'Yahoo!', icon: '🏪', enabled: false, api: '/api/yahoo' }
+      { id: 'rakuten', name: '樂天', icon: '🏮', enabled: false, api: '/api/rakuten' },
+      { id: 'mercari', name: 'メルカリ', icon: '📱', enabled: false, api: '/api/mercari' },
+      { id: 'yahoo-auction', name: 'Yahoo!拍賣', icon: '🔨', enabled: false, api: '/api/yahoo-auction' }
     ])
 
     // 启用的数据源
