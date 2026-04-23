@@ -42,7 +42,6 @@
 <script>
 import { ref } from 'vue'
 
-// SHA256 hash of "ppnn13%"
 const CORRECT_HASH = '303176f2784626cf0f23ffabf9516f68328db7d55e78ae0987bfdc2e0b1901f7'
 
 // Simple SHA256 implementation for browser
