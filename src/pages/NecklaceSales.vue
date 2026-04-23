@@ -96,6 +96,7 @@
           title="点击查看商品详情"
         >
           <div class="card-rank">{{ item.rank }}</div>
+          <img v-if="item.image" :src="item.image" :alt="item.productName" class="card-image" />
           <div class="card-content">
             <div class="card-website">{{ item.website }}</div>
             <h3 class="card-product">{{ item.productName }}</h3>
@@ -311,8 +312,9 @@ export default {
 .card-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
 .product-card { background: white; border: 2px solid #eee; border-radius: 12px; padding: 20px; position: relative; }
 .product-card.rank-1 { border-color: #ffd700; }.product-card.rank-2 { border-color: #c0c0c0; }.product-card.rank-3 { border-color: #cd7f32; }
-.card-rank { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; background: #667eea; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+.card-rank { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; background: #667eea; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 1; }
 .product-card.rank-1 .card-rank { background: #ffd700; }
+.card-image { width: 100%; height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; }
 .card-website { font-size: 0.85rem; color: #667eea; margin-bottom: 8px; }
 .card-product { font-size: 1rem; margin: 8px 0; color: #333; }
 .card-brand, .card-price, .card-sales { margin: 6px 0; color: #555; font-size: 0.9rem; }
