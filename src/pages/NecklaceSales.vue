@@ -327,4 +327,30 @@ export default {
 .bar-container { flex: 1; height: 24px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
 .bar { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; }
 .bar-value { color: white; font-size: 0.85rem; font-weight: bold; }
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .necklace-sales { padding: 12px; }
+  .controls { flex-direction: column; padding: 16px; }
+  .control-group { width: 100%; flex-wrap: wrap; }
+  .control-group select, .control-group input { width: 100%; min-width: auto; }
+  .search-group { width: 100%; }
+  .search-group input { width: 100%; }
+  .refresh-btn { width: 100%; margin-left: 0; margin-top: 10px; }
+  .view-toggle { width: 100%; justify-content: center; }
+  .stats-overview { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-card { padding: 12px; }
+  .stat-value { font-size: 1.4rem; }
+  .card-view { grid-template-columns: 1fr; gap: 16px; }
+  .table-view { font-size: 0.85rem; }
+  .table-view th, .table-view td { padding: 8px; }
+  .bar-label { width: 60px; font-size: 0.75rem; }
+}
+
+@media (max-width: 480px) {
+  .stats-overview { grid-template-columns: 1fr; }
+  .view-toggle button { padding: 8px 12px; font-size: 0.8rem; }
+  .card-rank { width: 28px; height: 28px; font-size: 0.8rem; }
+  .card-image { height: 150px; }
+}
 </style>
