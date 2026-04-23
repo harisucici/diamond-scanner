@@ -78,6 +78,8 @@
             </div>
             <div v-if="log.error" class="debug-error">错误: {{ log.error }}</div>
             <pre v-if="log.raw" class="debug-raw">{{ JSON.stringify(log.raw, null, 2) }}</pre>
+            <pre v-if="log.fullData && log.fullData.length > 0" class="debug-raw debug-full">完整数据(前5条):
+{{ JSON.stringify(log.fullData, null, 2) }}</pre>
           </div>
         </div>
       </div>
@@ -361,13 +363,22 @@ export default {
             })
             const result = await response.json()
             const duration = Date.now() - startTime
+            
+            // 获取完整数据
+            let fullData = []
+            try {
+              const dataRes = await fetch(`${source.api}?month=${selectedMonth.value}`)
+              fullData = await dataRes.json()
+            } catch (e) {}
+            
             debugLogs.value.push({
               name: source.name,
               success: result.success,
               count: result.count || 0,
               error: result.error || null,
               duration,
-              raw: result
+              raw: result,
+              fullData: fullData.slice(0, 5) // 只显示前5条完整数据
             })
             console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
           } catch (e) {
@@ -377,7 +388,8 @@ export default {
               count: 0,
               error: e.message,
               duration: Date.now() - startTime,
-              raw: null
+              raw: null,
+              fullData: []
             })
             console.warn(`刷新 ${source.name} 失败:`, e)
           }
@@ -526,6 +538,7 @@ export default {
 .debug-info { font-size: 0.85rem; color: #aaa; display: flex; gap: 15px; }
 .debug-error { color: #ff4444; font-size: 0.85rem; margin-top: 6px; }
 .debug-raw { background: #111; padding: 8px; border-radius: 4px; font-size: 0.75rem; color: #0f0; overflow-x: auto; margin-top: 8px; }
+.debug-full { color: #ff0; border: 1px solid #664400; }
 
 /* 响应式布局 */
 @media (max-width: 768px) {
