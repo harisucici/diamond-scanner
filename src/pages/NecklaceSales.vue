@@ -46,6 +46,9 @@
       <button class="refresh-btn" @click="refreshMonth" :disabled="refreshing">
         {{ refreshing ? '...' : '🔄' }}
       </button>
+      <button class="debug-btn" @click="showDebug = !showDebug" title="调试信息">
+        🔧
+      </button>
     </div>
 
     <div class="stats-overview" v-if="stats">
@@ -56,6 +59,29 @@
           <p>正在刷新 {{ formatMonth(selectedMonth) }} 的数据...</p>
         </div>
       </div>
+
+      <!-- 调试面板 -->
+      <div v-if="showDebug && debugLogs.length > 0" class="debug-panel">
+        <div class="debug-header">
+          <h4>🔧 调试信息</h4>
+          <button class="debug-close" @click="showDebug = false">✕</button>
+        </div>
+        <div class="debug-content">
+          <div v-for="(log, index) in debugLogs" :key="index" class="debug-item" :class="log.success ? 'success' : 'error'">
+            <div class="debug-title">
+              <span class="debug-name">{{ log.name }}</span>
+              <span class="debug-status">{{ log.success ? '✅' : '❌' }}</span>
+            </div>
+            <div class="debug-info">
+              <span>数量: {{ log.count }}</span>
+              <span>耗时: {{ log.duration }}ms</span>
+            </div>
+            <div v-if="log.error" class="debug-error">错误: {{ log.error }}</div>
+            <pre v-if="log.raw" class="debug-raw">{{ JSON.stringify(log.raw, null, 2) }}</pre>
+          </div>
+        </div>
+      </div>
+
       <div class="stat-card">
         <div class="stat-value">{{ stats.totalRecords }}</div>
         <div class="stat-label">数据条目</div>
@@ -165,6 +191,8 @@ export default {
     const loading = ref(false)
     const refreshing = ref(false)
     const viewMode = ref('table')
+    const showDebug = ref(false)
+    const debugLogs = ref([])
     const selectedMonth = ref('')
     const selectedCategory = ref('')
     const searchKeyword = ref('')
@@ -322,25 +350,42 @@ export default {
 
     const refreshMonth = async () => {
       refreshing.value = true
+      debugLogs.value = [] // 清空日志
       try {
         // 刷新所有启用的数据源
         for (const source of enabledSources.value) {
+          const startTime = Date.now()
           try {
             const response = await fetch(`${source.api}/refresh/${selectedMonth.value}`, {
               method: 'POST'
             })
             const result = await response.json()
+            const duration = Date.now() - startTime
+            debugLogs.value.push({
+              name: source.name,
+              success: result.success,
+              count: result.count || 0,
+              error: result.error || null,
+              duration,
+              raw: result
+            })
             console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
           } catch (e) {
+            debugLogs.value.push({
+              name: source.name,
+              success: false,
+              count: 0,
+              error: e.message,
+              duration: Date.now() - startTime,
+              raw: null
+            })
             console.warn(`刷新 ${source.name} 失败:`, e)
           }
         }
         
-        alert(`✅ 已刷新 ${enabledSources.value.length} 个数据源`)
         await loadData()
       } catch (error) {
         console.error('刷新数据失败:', error)
-        alert('❌ 刷新失败')
       } finally {
         refreshing.value = false
       }
@@ -365,7 +410,8 @@ export default {
     return {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
       availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory, loadData, refreshMonth, openItemUrl,
-      allSources, enabledSources, toggleSource, showSourceMenu, sourceStatus, loadSourceStatus, getSourceIcon
+      allSources, enabledSources, toggleSource, showSourceMenu, sourceStatus, loadSourceStatus, getSourceIcon,
+      showDebug, debugLogs
     }
   }
 }
@@ -463,6 +509,23 @@ export default {
 .bar-container { flex: 1; height: 24px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
 .bar { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; }
 .bar-value { color: white; font-size: 0.85rem; font-weight: bold; }
+
+/* 调试面板 */
+.debug-btn { padding: 8px 14px; background: #444; color: white; border: none; border-radius: 16px; cursor: pointer; font-size: 0.85rem; }
+.debug-btn:hover { background: #555; }
+.debug-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 600px; max-height: 80vh; background: #1a1a2e; border: 1px solid #00d4ff; border-radius: 12px; z-index: 9999; overflow: hidden; }
+.debug-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,212,255,0.1); border-bottom: 1px solid #333; }
+.debug-header h4 { margin: 0; color: #00d4ff; }
+.debug-close { background: none; border: none; color: #fff; font-size: 1.2rem; cursor: pointer; }
+.debug-content { padding: 12px; max-height: 60vh; overflow-y: auto; }
+.debug-item { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.debug-item.success { border-left: 3px solid #00ff00; }
+.debug-item.error { border-left: 3px solid #ff4444; }
+.debug-title { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.debug-name { font-weight: bold; color: #fff; }
+.debug-info { font-size: 0.85rem; color: #aaa; display: flex; gap: 15px; }
+.debug-error { color: #ff4444; font-size: 0.85rem; margin-top: 6px; }
+.debug-raw { background: #111; padding: 8px; border-radius: 4px; font-size: 0.75rem; color: #0f0; overflow-x: auto; margin-top: 8px; }
 
 /* 响应式布局 */
 @media (max-width: 768px) {
