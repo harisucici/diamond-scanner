@@ -31,6 +31,18 @@
         <button :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">📈</button>
       </div>
 
+      <div class="source-menu-wrap">
+        <button class="source-menu-btn" @click="showSourceMenu = !showSourceMenu">
+          📡 数据源 <span class="source-count">{{ enabledSources.length }}</span>
+        </button>
+        <div v-if="showSourceMenu" class="source-dropdown">
+          <label v-for="source in allSources" :key="source.id" class="source-item">
+            <input type="checkbox" :checked="source.enabled" @change="toggleSource(source.id)" />
+            <span>{{ source.icon }} {{ source.name }}</span>
+          </label>
+        </div>
+      </div>
+
       <button class="refresh-btn" @click="refreshMonth" :disabled="refreshing">
         {{ refreshing ? '...' : '🔄' }}
       </button>
@@ -148,6 +160,19 @@ export default {
     const stats = ref(null)
     const availableMonths = ref([])
     const categories = ref([])
+    const showSourceMenu = ref(false)
+
+    // 数据源配置 (默认只启用BUYMA)
+    const allSources = ref([
+      { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
+      { id: 'zozotown', name: 'ZOZOTOWN', icon: '👗', enabled: false, api: '/api/zozotown' },
+      { id: 'rakuma', name: 'ラクマ', icon: '🔄', enabled: false, api: '/api/rakuma' },
+      { id: 'paypay', name: 'PayPay', icon: '💰', enabled: false, api: '/api/paypay' },
+      { id: 'yahoo', name: 'Yahoo!', icon: '🏪', enabled: false, api: '/api/yahoo' }
+    ])
+
+    // 启用的数据源
+    const enabledSources = computed(() => allSources.value.filter(s => s.enabled))
 
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
@@ -207,17 +232,39 @@ export default {
         // 加载品类列表
         await loadCategories()
         
-        // 根据是否选择品类来请求不同的数据
-        let url = `/api/necklaces?month=${selectedMonth.value}`
-        if (selectedCategory.value) {
-          url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+        // 从所有启用的数据源加载数据
+        const allData = []
+        
+        for (const source of enabledSources.value) {
+          try {
+            let url = `${source.api}?month=${selectedMonth.value}`
+            if (selectedCategory.value && source.id === 'buyma') {
+              url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+            }
+            
+            const response = await fetch(url)
+            const items = await response.json()
+            
+            // 为每个数据添加来源标识
+            items.forEach(item => {
+              allData.push({ ...item, _source: source.name })
+            })
+          } catch (e) {
+            console.warn(`加载 ${source.name} 失败:`, e)
+          }
         }
         
-        const response = await fetch(url)
-        data.value = await response.json()
+        data.value = allData
         
-        const statsResponse = await fetch(`/api/necklaces/stats/overview?month=${selectedMonth.value}`)
-        stats.value = await statsResponse.json()
+        // 计算统计信息
+        const totalRecords = allData.length
+        const totalSales = allData.reduce((sum, item) => sum + (item.sales || item.price || 0), 0)
+        stats.value = {
+          totalRecords,
+          totalSales,
+          byWebsite: {},
+          byCategory: {}
+        }
       } catch (error) {
         console.error('加载数据失败:', error)
       } finally {
@@ -246,19 +293,35 @@ export default {
     const refreshMonth = async () => {
       refreshing.value = true
       try {
-        const response = await fetch(`/api/necklaces/refresh/${selectedMonth.value}`, {
-          method: 'POST'
-        })
-        const result = await response.json()
-        if (result.success) {
-          alert(`✅ ${result.message}`)
-          await loadData()
+        // 刷新所有启用的数据源
+        for (const source of enabledSources.value) {
+          try {
+            const response = await fetch(`${source.api}/refresh/${selectedMonth.value}`, {
+              method: 'POST'
+            })
+            const result = await response.json()
+            console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
+          } catch (e) {
+            console.warn(`刷新 ${source.name} 失败:`, e)
+          }
         }
+        
+        alert(`✅ 已刷新 ${enabledSources.value.length} 个数据源`)
+        await loadData()
       } catch (error) {
         console.error('刷新数据失败:', error)
         alert('❌ 刷新失败')
       } finally {
         refreshing.value = false
+      }
+    }
+
+    // 切换数据源
+    const toggleSource = (sourceId) => {
+      const source = allSources.value.find(s => s.id === sourceId)
+      if (source) {
+        source.enabled = !source.enabled
+        loadData()
       }
     }
 
@@ -271,7 +334,8 @@ export default {
 
     return {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
-      availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory, loadData, refreshMonth, openItemUrl
+      availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory, loadData, refreshMonth, openItemUrl,
+      allSources, enabledSources, toggleSource, showSourceMenu
     }
   }
 }
@@ -284,7 +348,7 @@ export default {
 .page-title { text-align: center; margin-bottom: 24px; }
 .page-title h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .page-title .subtitle { color: rgba(255,255,255,0.5); font-size: 1rem; }
-.controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.3); align-items: center; justify-content: center; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.3); align-items: center; justify-content: center; position: relative; z-index: 1; }
 .control-group { display: flex; align-items: center; gap: 6px; }
 .control-group label { font-weight: 500; color: rgba(255,255,255,0.7); font-size: 0.85rem; }
 .control-group select, .control-group input { padding: 8px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; min-width: 120px; font-size: 0.85rem; background: rgba(255,255,255,0.08); color: #fff; }
@@ -297,6 +361,16 @@ export default {
 .view-toggle button { padding: 8px 12px; border: none; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 12px; transition: all 0.3s ease; font-size: 1rem; }
 .view-toggle button:hover { color: #fff; }
 .view-toggle button.active { background: linear-gradient(135deg, #00d4ff, #667eea); color: white; font-weight: 600; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
+
+.source-menu-wrap { position: relative; }
+.source-menu-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: rgba(102, 126, 234, 0.2); border: 1px solid rgba(102, 126, 234, 0.4); color: #fff; border-radius: 16px; cursor: pointer; font-size: 0.85rem; transition: all 0.3s; }
+.source-menu-btn:hover { background: rgba(102, 126, 234, 0.3); }
+.source-count { background: #00d4ff; color: #000; padding: 2px 6px; border-radius: 10px; font-size: 0.75rem; font-weight: bold; }
+.source-dropdown { position: absolute; top: 100%; right: 0; margin-top: 8px; background: rgba(15, 12, 41, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 12px; padding: 10px; z-index: 9999; min-width: 160px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+.source-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+.source-item:hover { background: rgba(102, 126, 234, 0.2); }
+.source-item input { accent-color: #667eea; width: 16px; height: 16px; }
+.source-item span { color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; }
 .stats-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
 .stat-card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); padding: 20px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s ease; }
 .stat-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
