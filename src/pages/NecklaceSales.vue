@@ -80,6 +80,8 @@
             <pre v-if="log.raw" class="debug-raw">{{ JSON.stringify(log.raw, null, 2) }}</pre>
             <pre v-if="log.fullData && log.fullData.length > 0" class="debug-raw debug-full">完整数据(前5条):
 {{ JSON.stringify(log.fullData, null, 2) }}</pre>
+            <pre v-if="log.raw && log.raw.debugHtml" class="debug-raw debug-html">原始HTML:
+{{ log.raw.debugHtml }}</pre>
           </div>
         </div>
       </div>
@@ -378,7 +380,7 @@ export default {
               error: result.error || null,
               duration,
               raw: result,
-              fullData: fullData.slice(0, 5) // 只显示前5条完整数据
+              fullData: (result.items && result.items.length > 0) ? result.items : fullData.slice(0, 2)
             })
             console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
           } catch (e) {
@@ -539,6 +541,7 @@ export default {
 .debug-error { color: #ff4444; font-size: 0.85rem; margin-top: 6px; }
 .debug-raw { background: #111; padding: 8px; border-radius: 4px; font-size: 0.75rem; color: #0f0; overflow-x: auto; margin-top: 8px; }
 .debug-full { color: #ff0; border: 1px solid #664400; }
+.debug-html { color: #f0f; border: 1px solid #440044; }
 
 /* 响应式布局 */
 @media (max-width: 768px) {

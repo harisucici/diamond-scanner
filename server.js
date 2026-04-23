@@ -796,10 +796,10 @@ const fetchYahooAuctionData = async (keyword = 'アクセサリー') => {
     }
     
     console.log(`Yahoo!拍賣爬取: 获取${items.length}条数据`)
-    return items
+    return { items, html }
   } catch (error) {
     console.error('Yahoo!拍賣爬取失败:', error.message)
-    return []
+    return { items: [], html: '' }
   }
 }
 
@@ -1734,7 +1734,9 @@ app.post('/api/yahoo-auction/refresh/:month', async (req, res) => {
   const { month } = req.params
   const { keyword } = req.query
   try {
-    const items = await fetchYahooAuctionData(keyword || 'アクセサリー')
+    const result = await fetchYahooAuctionData(keyword || 'アクセサリー')
+    const items = result.items
+    const html = result.html || ''
     db.run('DELETE FROM yahoo_auction_products WHERE month = ?', [month])
     const now = new Date().toISOString()
     items.forEach((item, index) => {
@@ -1742,7 +1744,7 @@ app.post('/api/yahoo-auction/refresh/:month', async (req, res) => {
         [item.rank, month, item.productName, item.brand, item.price, item.url || '', now])
     })
     saveDatabase()
-    res.json({ success: true, count: items.length, month, platform: 'Yahoo!拍賣' })
+    res.json({ success: true, count: items.length, month, platform: 'Yahoo!拍賣', items: items.slice(0, 3), debugHtml: html.substring(0, 5000) })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
