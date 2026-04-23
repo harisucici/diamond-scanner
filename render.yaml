@@ -2,6 +2,7 @@ services:
   - type: web
     name: diamond-scanner
     env: node
+    region: tokyo
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:

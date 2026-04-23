@@ -7,6 +7,20 @@ import initSqlJs from 'sql.js'
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 
+// 代理配置 (可从环境变量读取)
+const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || ''
+
+// 获取代理Agent
+const getProxyAgent = () => {
+  if (!PROXY_URL) return undefined
+  try {
+    const { HttpsProxyAgent } = require('https-proxy-agent')
+    return new HttpsProxyAgent(PROXY_URL)
+  } catch (e) {
+    return undefined
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -116,6 +130,48 @@ const initDatabase = async () => {
     // Yahoo!ショッピング 数据表
     db.run(`
       CREATE TABLE IF NOT EXISTS yahoo_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // Amazon.co.jp 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS amazon_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // Qoo10 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS qoo10_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // DMM 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS dmm_products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         rank INTEGER,
         month TEXT,
@@ -347,6 +403,129 @@ const fetchYahooShoppingData = async (keyword = 'アクセサリー') => {
     return items
   } catch (error) {
     console.error('Yahoo!ショッピング爬取失败:', error.message)
+    return []
+  }
+}
+
+// Amazon.co.jp 爬虫
+const fetchAmazonJPData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://www.amazon.co.jp/s?k=${encodeURIComponent(keyword)}&rh=p_89%3A&page=1`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
+        'Cookie': 'session-id=147-1850366-9478737; session-id-time=2082787201l'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Amazon商品匹配
+    const patterns = [
+      /data-asin="([^"]+)"[^>]*>[\s\S]*?class="a-size-base-plus[^"]*"[^>]*>([^<]+)<[\s\S]*?class="a-price-whole"[^>]*>(\d[,\d]*)/g,
+      /class="[^']*s-result-item[^']*"[^>]*>[\s\S]*?data-asin="([^"]+)"[\s\S]*?class="[^"]*a-text-normal[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*a-price-whole[^"]*"[^>]*>(\d+)/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const asin = match[1]
+        const productName = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName)) {
+          items.push({ rank: rank++, asin, productName, brand: 'OTHER', price, category: 'accessories', url: `https://www.amazon.co.jp/dp/${asin}` })
+        }
+      }
+    }
+    
+    console.log(`Amazon.co.jp爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('Amazon.co.jp爬取失败:', error.message)
+    return []
+  }
+}
+
+// Qoo10 爬虫
+const fetchQoo10Data = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://www.qoo10.jp/s/${encodeURIComponent(keyword)}`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'text/html',
+        'Accept-Language': 'ja'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Qoo10商品匹配
+    const patterns = [
+      /class="[^"]*goods[^"]*"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g,
+      /item\/(\d+)"[^>]*>[\s\S]*?class="[^"]* goods_name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const productName = match[1].trim()
+        const price = parseInt(match[2].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName)) {
+          items.push({ rank: rank++, productName, brand: 'OTHER', price, category: 'accessories', url: '' })
+        }
+      }
+    }
+    
+    console.log(`Qoo10爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('Qoo10爬取失败:', error.message)
+    return []
+  }
+}
+
+// DMM.com 爬虫
+const fetchDMMData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://search.dmm.co.jp/search?keyword=${encodeURIComponent(keyword)}`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'text/html',
+        'Accept-Language': 'ja'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // DMM商品匹配
+    const pattern = /class="[^"]*DMM[^"]*item[^"]*"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g
+    let match
+    
+    while ((match = pattern.exec(html)) !== null && rank <= 30) {
+      const productName = match[1].trim()
+      const price = parseInt(match[2].replace(/\D/g, ''))
+      if (!items.find(i => i.productName === productName)) {
+        items.push({ rank: rank++, productName, brand: 'OTHER', price, category: 'accessories', url: '' })
+      }
+    }
+    
+    console.log(`DMM爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('DMM爬取失败:', error.message)
     return []
   }
 }
@@ -984,6 +1163,141 @@ app.post('/api/yahoo/refresh/:month', async (req, res) => {
     })
     saveDatabase()
     res.json({ success: true, count: items.length, month, platform: 'Yahoo!ショッピング' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// Amazon.co.jp API
+// ============================================
+app.get('/api/amazon', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM amazon_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/amazon/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM amazon_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/amazon/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchAmazonJPData(keyword || 'アクセサリー')
+    db.run('DELETE FROM amazon_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO amazon_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'Amazon.co.jp' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// Qoo10 API
+// ============================================
+app.get('/api/qoo10', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM qoo10_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/qoo10/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM qoo10_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/qoo10/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchQoo10Data(keyword || 'アクセサリー')
+    db.run('DELETE FROM qoo10_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO qoo10_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'Qoo10' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// DMM API
+// ============================================
+app.get('/api/dmm', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM dmm_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/dmm/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM dmm_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/dmm/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchDMMData(keyword || 'アクセサリー')
+    db.run('DELETE FROM dmm_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO dmm_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'DMM' })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
