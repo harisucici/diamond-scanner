@@ -68,6 +68,35 @@ const initDatabase = async () => {
         created_at TEXT
       )
     `)
+
+    // ZOZOTOWN 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS zozotown_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        category TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // ラクマ 数据表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS rakuma_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
     
     // 初始化示例数据（如果为空）
     const diamondCount = db.exec('SELECT COUNT(*) as count FROM diamonds')[0]?.values[0][0] || 0
@@ -91,6 +120,128 @@ if (necklaceCount === 0) {
     console.log('Database initialized successfully')
   } catch (error) {
     console.error('Database initialization error:', error)
+  }
+}
+
+// ZOZOTOWN 爬虫 - 获取时尚配饰销量
+const fetchZozotownData = async (category = 'accessories') => {
+  try {
+    const categoryMap = {
+      'accessories': 'a0001',  // アクセサリー
+      'necklaces': 'a0001010', // 项链
+      'bracelets': 'a0001020', // 手链
+      'rings': 'a0001030',     // 戒指
+      'earrings': 'a0001040'   // 耳环
+    }
+    
+    const categoryCode = categoryMap[category] || 'a0001'
+    const url = `https://www.zozo.jp/genre/${categoryCode}/?p=1&rank=1`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    
+    // 提取商品数据
+    const items = []
+    
+    // 匹配商品卡片
+    const productPattern = /data-product-name="([^"]+)"[^>]*data-brand-name="([^"]+)"[^>]*data-price="(\d+)"/g
+    let match
+    let rank = 1
+    
+    while ((match = productPattern.exec(html)) !== null && rank <= 30) {
+      const productName = match[1]
+      const brand = match[2]
+      const price = parseInt(match[3])
+      
+      items.push({
+        rank: rank++,
+        productName,
+        brand,
+        price,
+        category: category,
+        url: ''
+      })
+    }
+    
+    // 备用：匹配更多商品
+    if (items.length < 10) {
+      const simplePattern = /class="item-card[^"]*"[^>]*>[\s\S]*?class="item-name"[^>]*>([^<]+)<[\s\S]*?class="brand-name"[^>]*>([^<]+)<[\s\S]*?class="price"[^>]*>(\d+,?\d*)/g
+      while ((match = simplePattern.exec(html)) !== null && rank <= 30) {
+        const productName = match[1].trim()
+        const brand = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        
+        if (!items.find(i => i.productName === productName)) {
+          items.push({
+            rank: rank++,
+            productName,
+            brand,
+            price,
+            category: category,
+            url: ''
+          })
+        }
+      }
+    }
+    
+    console.log(`ZOZOTOWN爬取: 获取${items.length}条${category}数据`)
+    return items
+  } catch (error) {
+    console.error('ZOZOTOWN爬取失败:', error.message)
+    return []
+  }
+}
+
+// ラクマ (Rakuma) 爬虫
+const fetchRakumaData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://fril.jp/s?query=${encodeURIComponent(keyword)}&sort=item_sold_count&order=desc`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    
+    // 提取商品数据
+    const itemPattern = /data-item-id="(\d+)"[^>]*>[\s\S]*?class="item-name"[^>]*>([^<]+)<[\s\S]*?class="user-icon"[^>]*>[\s\S]*?class="user-name"[^>]*>([^<]+)<[\s\S]*?class="price"[^>]*>(\d+,?\d*)/g
+    let match
+    let rank = 1
+    
+    while ((match = itemPattern.exec(html)) !== null && rank <= 30) {
+      const itemId = match[1]
+      const productName = match[2].trim()
+      const brand = match[3].trim()
+      const price = parseInt(match[4].replace(/\D/g, ''))
+      
+      items.push({
+        rank: rank++,
+        itemId,
+        productName,
+        brand: brand || 'OTHER',
+        price,
+        category: 'accessories',
+        url: `https://fril.jp/items/${itemId}`
+      })
+    }
+    
+    console.log(`ラクマ爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('ラクマ爬取失败:', error.message)
+    return []
   }
 }
 
@@ -475,6 +626,148 @@ app.post('/api/necklaces/refresh/:month', async (req, res) => {
     })
   } catch (error) {
     console.error('刷新失败:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// ZOZOTOWN API
+// ============================================
+app.get('/api/zozotown', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  
+  const { month, category, search, limit } = req.query
+  let sql = 'SELECT * FROM zozotown_products WHERE 1=1'
+  const params = []
+  
+  if (month) {
+    sql += ' AND month = ?'
+    params.push(month)
+  }
+  if (category) {
+    sql += ' AND category = ?'
+    params.push(category)
+  }
+  if (search) {
+    sql += ' AND (productName LIKE ? OR brand LIKE ?)'
+    const s = `%${search}%`
+    params.push(s, s)
+  }
+  
+  sql += ' ORDER BY rank ASC'
+  
+  if (limit) {
+    sql += ' LIMIT ?'
+    params.push(parseInt(limit))
+  }
+  
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/zozotown/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM zozotown_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.get('/api/zozotown/categories', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT category FROM zozotown_products ORDER BY category')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/zozotown/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const items = await fetchZozotownData(category || 'accessories')
+    db.run('DELETE FROM zozotown_products WHERE month = ?', [month])
+    
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run(
+        'INSERT INTO zozotown_products (rank, month, category, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, category || 'accessories', item.productName, item.brand, item.price, item.url, now]
+      )
+    })
+    
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'ZOZOTOWN' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// ラクマ API
+// ============================================
+app.get('/api/rakuma', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM rakuma_products WHERE 1=1'
+  const params = []
+  
+  if (month) {
+    sql += ' AND month = ?'
+    params.push(month)
+  }
+  if (search) {
+    sql += ' AND (productName LIKE ? OR brand LIKE ?)'
+    const s = `%${search}%`
+    params.push(s, s)
+  }
+  
+  sql += ' ORDER BY rank ASC'
+  
+  if (limit) {
+    sql += ' LIMIT ?'
+    params.push(parseInt(limit))
+  }
+  
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/rakuma/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM rakuma_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/rakuma/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  
+  try {
+    const items = await fetchRakumaData(keyword || 'アクセサリー')
+    db.run('DELETE FROM rakuma_products WHERE month = ?', [month])
+    
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run(
+        'INSERT INTO rakuma_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [index + 1, month, item.productName, item.brand, item.price, item.url, now]
+      )
+    })
+    
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: 'ラクマ' })
+  } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
