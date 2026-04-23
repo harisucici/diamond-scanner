@@ -1,31 +1,78 @@
 <template>
   <div class="app">
-    <nav class="main-nav">
-      <div class="nav-brand">
-        <h1>💍 日本配饰销量排行</h1>
-      </div>
-    </nav>
+    <!-- 登录页 -->
+    <LoginPage v-if="!isLoggedIn" @login-success="handleLoginSuccess" />
+    
+    <!-- 主页面 -->
+    <template v-else>
+      <nav class="main-nav">
+        <div class="nav-brand">
+          <h1>💍 日本配饰销量排行</h1>
+        </div>
+        <button class="logout-btn" @click="handleLogout">退出</button>
+      </nav>
 
-    <!-- 配饰销量排行榜页面 -->
-    <NecklaceSales />
+      <!-- 配饰销量排行榜页面 -->
+      <NecklaceSales />
 
-    <footer class="main-footer">
-      <p>日本配饰销量排行 v1.0</p>
-    </footer>
+      <footer class="main-footer">
+        <p>日本配饰销量排行 v1.0</p>
+      </footer>
+    </template>
   </div>
 </template>
 
 <script>
 import { ref, onMounted } from 'vue'
 import NecklaceSales from './pages/NecklaceSales.vue'
+import LoginPage from './pages/LoginPage.vue'
 
 export default {
   name: 'App',
   components: {
-    NecklaceSales
+    NecklaceSales,
+    LoginPage
   },
   setup() {
-    // 配饰销量页面
+    const isLoggedIn = ref(false)
+    
+    const checkLogin = () => {
+      const loggedIn = localStorage.getItem('isLoggedIn')
+      if (loggedIn) {
+        // 检查是否在24小时内登录
+        const loginTime = parseInt(localStorage.getItem('loginTime') || '0')
+        const now = Date.now()
+        const oneDay = 24 * 60 * 60 * 1000
+        
+        if (now - loginTime < oneDay) {
+          isLoggedIn.value = true
+        } else {
+          // 超过24小时，重新登录
+          localStorage.removeItem('isLoggedIn')
+          localStorage.removeItem('loginTime')
+        }
+      }
+    }
+    
+    const handleLoginSuccess = () => {
+      isLoggedIn.value = true
+    }
+    
+    const handleLogout = () => {
+      localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('loginTime')
+      isLoggedIn.value = false
+    }
+    
+    onMounted(() => {
+      checkLogin()
+    })
+    
+    return {
+      isLoggedIn,
+      handleLoginSuccess,
+      handleLogout
+    }
   }
 }
 </script>
@@ -37,17 +84,19 @@ export default {
   box-sizing: border-box;
 }
 
-body {
+html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
   color: #fff;
   min-height: 100vh;
-  margin: 0;
+}
+
+#app {
+  min-height: 100vh;
 }
 
 .app {
   min-height: 100vh;
-  padding-bottom: 60px;
 }
 
 /* 导航栏 */
@@ -55,169 +104,43 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .nav-brand h1 {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #00d4ff 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.nav-links {
-  display: flex;
-  gap: 10px;
-}
-
-.nav-links a {
-  color: white;
-  text-decoration: none;
+.logout-btn {
   padding: 8px 16px;
-  border-radius: 8px;
-  transition: all 0.3s;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.nav-links a:hover {
-  background: rgba(255,255,255,0.2);
-}
-
-.nav-links a.active {
-  background: white;
-  color: #667eea;
-}
-
-/* 钻石管理页面样式 */
-.diamond-page {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.page-header {
-  text-align: center;
-  padding: 30px;
-  background: white;
-  border-radius: 16px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.page-header h1 {
-  color: #667eea;
-  font-size: 2rem;
-  margin-bottom: 10px;
-}
-
-.subtitle {
-  color: #777;
-}
-
-main {
-  background: white;
-  border-radius: 16px;
-  padding: 30px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.status-section, .api-section {
-  margin-bottom: 25px;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 12px;
-}
-
-h3 {
-  color: #444;
-  margin-bottom: 15px;
-}
-
-.btn-group {
-  display: flex;
-  gap: 10px;
-  margin-top: 15px;
-}
-
-button {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   cursor: pointer;
-  font-size: 1rem;
-  transition: all 0.3s;
-}
-
-button:hover {
-  background: #5a67d8;
-  transform: translateY(-2px);
-}
-
-.delete-btn {
-  background: #e53e3e;
-  padding: 6px 12px;
   font-size: 0.85rem;
+  transition: all 0.3s ease;
 }
 
-.delete-btn:hover {
-  background: #c53030;
-}
-
-.data-section ul {
-  list-style: none;
-}
-
-.data-section li {
-  padding: 12px;
-  border-bottom: 1px solid #eee;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.api-result {
-  margin-top: 15px;
-  padding: 12px;
-  background: #e6fffa;
-  border-radius: 8px;
-  border-left: 4px solid #38b2ac;
+.logout-btn:hover {
+  background: rgba(255, 82, 82, 0.2);
+  border-color: rgba(255, 82, 82, 0.4);
+  color: #ff5252;
 }
 
 /* 页脚 */
 .main-footer {
   text-align: center;
-  padding: 15px;
-  background: #333;
-  color: #aaa;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.3);
   font-size: 0.85rem;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .main-nav {
-    flex-direction: column;
-    gap: 15px;
-    padding: 15px;
-  }
-  
-  .nav-links {
-    width: 100%;
-    justify-content: center;
-  }
-  
-  .diamond-page {
-    padding: 15px;
-  }
-  
-  main {
-    padding: 20px;
-  }
 }
 </style>
