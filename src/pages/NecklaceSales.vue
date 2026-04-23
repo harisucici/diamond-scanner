@@ -196,12 +196,12 @@ export default {
     const maxMonth = computed(() => availableMonths.value[availableMonths.value.length - 1] || '2026-04')
 
     const filteredData = computed(() => {
-      if (!searchKeyword.value) return data.value
+      if (!searchKeyword.value) return data.value || []
       const keyword = searchKeyword.value.toLowerCase()
-      return data.value.filter(item =>
-        item.productName.toLowerCase().includes(keyword) ||
-        item.brand.toLowerCase().includes(keyword) ||
-        item.website.toLowerCase().includes(keyword)
+      return (data.value || []).filter(item =>
+        (item.productName || '').toLowerCase().includes(keyword) ||
+        (item.brand || '').toLowerCase().includes(keyword) ||
+        (item.website || '').toLowerCase().includes(keyword)
       )
     })
 
@@ -211,6 +211,7 @@ export default {
     }
 
     const formatNumber = (num) => {
+      if (num === undefined || num === null) return '0'
       return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
     }
 
