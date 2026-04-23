@@ -1,34 +1,38 @@
 <template>
   <div class="necklace-sales">
+    <!-- 页面标题 -->
+    <div class="page-title">
+      <h1>💍 日本配饰销量排行</h1>
+      <p class="subtitle">日本各大购物平台配饰销量TOP10</p>
+    </div>
+
+    <!-- 控制栏 -->
     <div class="controls">
       <div class="control-group">
-        <label>选择月份:</label>
+        <label>📅</label>
         <input type="month" v-model="selectedMonth" @change="loadData" :min="minMonth" :max="maxMonth" />
       </div>
 
       <div class="control-group">
-        <label>选择品类:</label>
+        <label>🏷️</label>
         <select v-model="selectedCategory" @change="loadData">
           <option value="">全部品类</option>
           <option v-for="cat in categories" :key="cat" :value="cat">{{ formatCategory(cat) }}</option>
         </select>
       </div>
 
-      <div class="control-group">
-        <label>展示方式:</label>
-        <div class="view-toggle">
-          <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">📊 表格</button>
-          <button :class="{ active: viewMode === 'card' }" @click="viewMode = 'card'">🃏 卡片</button>
-          <button :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">📈 图表</button>
-        </div>
-      </div>
-
       <div class="control-group search-group">
         <input type="text" v-model="searchKeyword" placeholder="搜索商品名称、品牌..." @input="loadData" />
       </div>
 
+      <div class="view-toggle">
+        <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">📊</button>
+        <button :class="{ active: viewMode === 'card' }" @click="viewMode = 'card'">🃏</button>
+        <button :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">📈</button>
+      </div>
+
       <button class="refresh-btn" @click="refreshMonth" :disabled="refreshing">
-        {{ refreshing ? '刷新中...' : '🔄 刷新当月数据' }}
+        {{ refreshing ? '...' : '🔄' }}
       </button>
     </div>
 
@@ -272,18 +276,23 @@ export default {
 </script>
 
 <style scoped>
-.necklace-sales { font-family: sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%); min-height: 100vh; color: #fff; }
-.controls { display: flex; flex-wrap: wrap; gap: 15px; padding: 20px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-.control-group { display: flex; align-items: center; gap: 10px; }
-.control-group label { font-weight: 600; color: rgba(255,255,255,0.8); }
-.control-group select, .control-group input { padding: 10px; border: 1px solid rgba(255,255,255,0.2); border-radius: 20px; min-width: 180px; font-size: 1rem; background: rgba(255,255,255,0.08); color: #fff; }
+.necklace-sales { font-family: sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%); min-height: calc(100vh - 80px); color: #fff; }
+
+/* 页面标题 */
+.page-title { text-align: center; margin-bottom: 24px; }
+.page-title h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.page-title .subtitle { color: rgba(255,255,255,0.5); font-size: 1rem; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.3); align-items: center; justify-content: center; }
+.control-group { display: flex; align-items: center; gap: 6px; }
+.control-group label { font-weight: 500; color: rgba(255,255,255,0.7); font-size: 0.85rem; }
+.control-group select, .control-group input { padding: 8px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; min-width: 120px; font-size: 0.85rem; background: rgba(255,255,255,0.08); color: #fff; }
 .control-group input[type="month"] { cursor: pointer; }
 .search-group input { min-width: 250px; }
-.refresh-btn { padding: 10px 20px; background: linear-gradient(135deg, #00d4ff, #667eea); color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
+.refresh-btn { padding: 8px 14px; background: linear-gradient(135deg, #00d4ff, #667eea); color: white; border: none; border-radius: 16px; cursor: pointer; font-weight: 600; font-size: 0.85rem; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
 .refresh-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,212,255,0.5); }
 .refresh-btn:disabled { background: #444; cursor: not-allowed; transform: none; box-shadow: none; }
-.view-toggle { display: flex; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: 20px; padding: 4px; }
-.view-toggle button { padding: 10px 20px; border: none; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 16px; transition: all 0.3s ease; }
+.view-toggle { display: flex; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: 16px; padding: 4px; }
+.view-toggle button { padding: 8px 12px; border: none; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 12px; transition: all 0.3s ease; font-size: 1rem; }
 .view-toggle button:hover { color: #fff; }
 .view-toggle button.active { background: linear-gradient(135deg, #00d4ff, #667eea); color: white; font-weight: 600; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
 .stats-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
@@ -331,26 +340,18 @@ export default {
 /* 响应式布局 */
 @media (max-width: 768px) {
   .necklace-sales { padding: 12px; }
-  .controls { flex-direction: column; padding: 16px; }
-  .control-group { width: 100%; flex-wrap: wrap; }
-  .control-group select, .control-group input { width: 100%; min-width: auto; }
-  .search-group { width: 100%; }
+  .page-title h1 { font-size: 1.6rem; }
+  .controls { padding: 12px; gap: 8px; justify-content: flex-start; overflow-x: auto; }
+  .control-group { flex-shrink: 0; }
+  .control-group label { display: none; }
+  .control-group select, .control-group input { min-width: 100px; padding: 6px 10px; }
+  .search-group { flex: 1; min-width: 120px; }
   .search-group input { width: 100%; }
-  .refresh-btn { width: 100%; margin-left: 0; margin-top: 10px; }
-  .view-toggle { width: 100%; justify-content: center; }
-  .stats-overview { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .stat-card { padding: 12px; }
-  .stat-value { font-size: 1.4rem; }
-  .card-view { grid-template-columns: 1fr; gap: 16px; }
-  .table-view { font-size: 0.85rem; }
-  .table-view th, .table-view td { padding: 8px; }
-  .bar-label { width: 60px; font-size: 0.75rem; }
-}
-
-@media (max-width: 480px) {
-  .stats-overview { grid-template-columns: 1fr; }
-  .view-toggle button { padding: 8px 12px; font-size: 0.8rem; }
-  .card-rank { width: 28px; height: 28px; font-size: 0.8rem; }
-  .card-image { height: 150px; }
+  .view-toggle button { padding: 6px 10px; font-size: 0.9rem; }
+  .refresh-btn { padding: 6px 10px; }
+  .stats-overview { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-card { padding: 10px; }
+  .stat-value { font-size: 1.2rem; }
+  .card-view { grid-template-columns: repeat(2, 1fr); gap: 12px; }
 }
 </style>
