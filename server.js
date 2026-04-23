@@ -672,7 +672,7 @@ const fetchRakutenData = async (keyword = 'アクセサリー') => {
     
     // 樂天商品匹配
     const patterns = [
-      /href="(//item\.rakuten\.co\.jp/\d+/)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)/g,
+      new RegExp('href="(//item\\.rakuten\\.co\\.jp/\\d+/)"[^>]*>[\\s\\S]*?class="[^\"]*title[^\"]*"[^>]*>([^<]+)<[\\s\\S]*?class="[^\"]*price[^\"]*"[^>]*>(\\d[,\\d]*)"', 'g'),
       /data-item-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*item-name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
     ]
     
@@ -722,7 +722,7 @@ const fetchMercariData = async (keyword = 'アクセサリー') => {
     
     // Mercari商品匹配
     const patterns = [
-      /href="(/item/m\d+)"[^>]*>[\s\S]*?class="[^"]*name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g,
+      new RegExp('href="(/item/m\d+)"[^>]*>[\s\S]*?class="[^"]*name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円', 'g'),
       /data-item-id="([^"]+)"[^>]*>[\s\S]*?>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
     ]
     
@@ -772,7 +772,7 @@ const fetchYahooAuctionData = async (keyword = 'アクセサリー') => {
     
     // Yahoo!Auction商品匹配
     const patterns = [
-      /href="(//auctions\.yahoo\.co\.jp/item/[^\"]+)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)/g,
+      new RegExp('href="(//auctions\.yahoo\.co\.jp/item/[^"]+)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)', 'g'),
       /data-auction-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*Product[^\"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
     ]
     
