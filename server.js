@@ -1832,3 +1832,157 @@ initDatabase().then(() => {
     console.log(`Data file: ${dbPath}`)
   })
 })
+
+// ============================================
+// Instagram 爬虫
+// ============================================
+
+// Instagram 数据表
+const createInstagramTable = () => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS instagram_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rank INTEGER,
+      month TEXT,
+      hashtag TEXT,
+      postId TEXT,
+      username TEXT,
+      caption TEXT,
+      likes INTEGER,
+      comments INTEGER,
+      imageUrl TEXT,
+      url TEXT,
+      created_at TEXT
+    )
+  `)
+}
+
+// Instagram 数据获取函数
+const fetchInstagramData = async (hashtag = 'jewelry') => {
+  try {
+    const url = `https://www.instagram.com/explore/tags/${hashtag}/`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // 从HTML中提取JSON数据
+    const jsonMatch = html.match(/<script[^>]*>\s*window\._sharedData\s*=\s*({.*?});<\s*\/script>/)
+    if (jsonMatch) {
+      try {
+        const data = JSON.parse(jsonMatch[1])
+        const edges = data?.entry_data?.TagPage?.[0]?.graphql?.hashtag?.edge_hashtag_to_media?.edges || []
+        
+        for (const edge of edges.slice(0, 30)) {
+          const node = edge.node
+          if (node) {
+            items.push({
+              rank: rank++,
+              hashtag: hashtag,
+              postId: node.id || '',
+              username: node.owner?.username || '',
+              caption: node.edge_media_to_caption?.edges?.[0]?.node?.text?.substring(0, 200) || '',
+              likes: node.edge_liked_by?.count || 0,
+              comments: node.edge_media_to_comment?.count || 0,
+              imageUrl: node.thumbnail_src || node.display_url || '',
+              url: `https://www.instagram.com/p/${node.shortcode}/`
+            })
+          }
+        }
+      } catch (e) {
+        console.error('Instagram JSON解析失败:', e.message)
+      }
+    }
+    
+    console.log(`Instagram #${hashtag}: 获取${items.length}条数据`)
+    return { items, html: html.substring(0, 5000) }
+  } catch (error) {
+    console.error('Instagram爬取失败:', error.message)
+    return { items: [], html: '' }
+  }
+}
+
+// Instagram API
+app.get('/api/instagram', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, hashtag } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  const tag = hashtag || 'jewelry'
+  
+  try {
+    const result = db.exec(`SELECT * FROM instagram_posts WHERE month = '${tableMonth}' AND hashtag = '${tag}' ORDER BY rank LIMIT 30`)
+    const columns = result[0]?.columns || []
+    const values = result[0]?.values || []
+    
+    const items = values.map(row => {
+      const obj = {}
+      columns.forEach((col, i) => obj[col] = row[i])
+      return obj
+    })
+    
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/instagram/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec("SELECT DISTINCT month FROM instagram_posts ORDER BY month DESC")
+    const months = result[0]?.values?.map(v => v[0]) || []
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/instagram/hashtags', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec("SELECT DISTINCT hashtag FROM instagram_posts ORDER BY hashtag")
+    const hashtags = result[0]?.values?.map(v => v[0]) || []
+    res.json(hashtags)
+  } catch (error) {
+    res.json(['jewelry', 'accessories', 'リング', 'ピアス', 'ネックレス'])
+  }
+})
+
+app.post('/api/instagram/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { hashtag } = req.query
+  const tag = hashtag || 'jewelry'
+  
+  try {
+    // 确保表存在
+    createInstagramTable()
+    
+    // 删除当月数据
+    db.run(`DELETE FROM instagram_posts WHERE month = ? AND hashtag = ?`, [month, tag])
+    
+    // 获取数据
+    const result = await fetchInstagramData(tag)
+    const now = new Date().toISOString()
+    
+    result.items.forEach(item => {
+      db.run(`INSERT INTO instagram_posts (rank, month, hashtag, postId, username, caption, likes, comments, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [item.rank, month, item.hashtag, item.postId, item.username, item.caption, item.likes, item.comments, item.imageUrl, item.url, now])
+    })
+    
+    saveDatabase()
+    res.json({ success: true, count: result.items.length, month, hashtag: tag, platform: 'Instagram', items: result.items.slice(0, 3), debugHtml: result.html })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+console.log('Instagram API 已加载')

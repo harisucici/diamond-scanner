@@ -210,6 +210,7 @@ export default {
     // 数据源配置 (默认只启用BUYMA)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
+      { id: 'instagram', name: 'Instagram', icon: '📷', enabled: false, api: '/api/instagram' },
       { id: 'rakuten', name: '樂天', icon: '🏮', enabled: false, api: '/api/rakuten' },
       { id: 'mercari', name: 'メルカリ', icon: '📱', enabled: false, api: '/api/mercari' },
       { id: 'yahoo-auction', name: 'Yahoo!拍賣', icon: '🔨', enabled: false, api: '/api/yahoo-auction' }
