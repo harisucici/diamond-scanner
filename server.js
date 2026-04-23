@@ -182,6 +182,20 @@ const initDatabase = async () => {
         created_at TEXT
       )
     `)
+
+    // 价格.com 产品表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS kakaku_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price INTEGER,
+        url TEXT,
+        created_at TEXT
+      )
+    `)
     
     // 初始化示例数据（如果为空）
     const diamondCount = db.exec('SELECT COUNT(*) as count FROM diamonds')[0]?.values[0][0] || 0
@@ -403,6 +417,57 @@ const fetchYahooShoppingData = async (keyword = 'アクセサリー') => {
     return items
   } catch (error) {
     console.error('Yahoo!ショッピング爬取失败:', error.message)
+    return []
+  }
+}
+
+// 价格.com (kakaku.com) 爬虫
+const fetchKakakuData = async (keyword = 'アクセサリー') => {
+  try {
+    const url = `https://kakaku.com/search_result/?category_key=13&keyword=${encodeURIComponent(keyword)}`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
+        'Accept-Encoding': 'gzip, deflate, br'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // 价格.com商品匹配
+    const patterns = [
+      /href="(\/item\/\d+\/)"[^>]*>[\s\S]*?class="[^\"]*itemName[^\"]*"[^>]*>([^<]+)<[\s\S]*?class="[^\"]*price[^\"]*"[^>]*>(\d[,\d]*)\s*円/g,
+      /class="[^\"]*p-item[^\"]*"[^>]*>[\s\S]*?href="(\/item\/\d+\/)"[^>]*>[\s\S]*?<span[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(html)) !== null && rank <= 30) {
+        const url = match[1] || ''
+        const productName = match[2].trim()
+        const price = parseInt(match[3].replace(/\D/g, ''))
+        if (!items.find(i => i.productName === productName) && price > 0) {
+          items.push({ 
+            rank: rank++, 
+            productName, 
+            brand: 'OTHER', 
+            price, 
+            category: 'accessories', 
+            url: url ? `https://kakaku.com${url}` : '' 
+          })
+        }
+      }
+    }
+    
+    console.log(`価格.com爬取: 获取${items.length}条数据`)
+    return items
+  } catch (error) {
+    console.error('価格.com爬取失败:', error.message)
     return []
   }
 }
@@ -1303,6 +1368,49 @@ app.post('/api/dmm/refresh/:month', async (req, res) => {
   }
 })
 
+// 价格.com API
+app.get('/api/kakaku', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, search, limit } = req.query
+  let sql = 'SELECT * FROM kakaku_products WHERE 1=1'
+  const params = []
+  if (month) { sql += ' AND month = ?'; params.push(month) }
+  if (search) { sql += ' AND (productName LIKE ? OR brand LIKE ?)'; const s = `%${search}%`; params.push(s, s) }
+  sql += ' ORDER BY rank ASC'
+  if (limit) { sql += ' LIMIT ?'; params.push(parseInt(limit)) }
+  const stmt = db.prepare(sql)
+  if (params.length > 0) stmt.bind(params)
+  const results = []
+  while (stmt.step()) results.push(stmt.getAsObject())
+  stmt.free()
+  res.json(results)
+})
+
+app.get('/api/kakaku/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const result = db.exec('SELECT DISTINCT month FROM kakaku_products ORDER BY month DESC')
+  res.json(result[0]?.values.map(v => v[0]) || [])
+})
+
+app.post('/api/kakaku/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { keyword } = req.query
+  try {
+    const items = await fetchKakakuData(keyword || 'アクセサリー')
+    db.run('DELETE FROM kakaku_products WHERE month = ?', [month])
+    const now = new Date().toISOString()
+    items.forEach((item, index) => {
+      db.run('INSERT INTO kakaku_products (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.url || '', now])
+    })
+    saveDatabase()
+    res.json({ success: true, count: items.length, month, platform: '価格.com' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // ============================================
 // 测试 API
 // ============================================
@@ -1314,6 +1422,34 @@ app.get('/api/test', (req, res) => {
     timestamp: new Date().toISOString(),
     storage: 'SQLite (sql.js)'
   })
+})
+
+// 数据源状态 API
+app.get('/api/sources/status', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  
+  const sources = [
+    { id: 'buyma', name: 'BUYMA', table: 'necklaces' },
+    { id: 'kakaku', name: '価格.com', table: 'kakaku_products' },
+    { id: 'zozotown', name: 'ZOZOTOWN', table: 'zozotown_products' },
+    { id: 'rakuma', name: 'ラクマ', table: 'rakuma_products' },
+    { id: 'paypay', name: 'PayPay', table: 'paypay_products' },
+    { id: 'yahoo', name: 'Yahoo!', table: 'yahoo_products' }
+  ]
+  
+  const status = sources.map(s => {
+    try {
+      const result = db.exec(`SELECT COUNT(*) as count FROM ${s.table}`)
+      const count = result[0]?.values[0][0] || 0
+      const monthsResult = db.exec(`SELECT DISTINCT month FROM ${s.table} ORDER BY month DESC LIMIT 3`)
+      const months = monthsResult[0]?.values.map(v => v[0]) || []
+      return { id: s.id, name: s.name, count, months, hasData: count > 0 }
+    } catch (e) {
+      return { id: s.id, name: s.name, count: 0, months: [], hasData: false, error: e.message }
+    }
+  })
+  
+  res.json(status)
 })
 
 // Start server
