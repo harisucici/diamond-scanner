@@ -65,6 +65,7 @@ const initDatabase = async () => {
         sales INTEGER,
         url TEXT,
         category TEXT,
+        image TEXT,
         created_at TEXT
       )
     `)
@@ -646,7 +647,7 @@ async function fetchBuymaData(category = 'メイン') {
       if (!itemId || seenIds.has(itemId)) continue
       seenIds.add(itemId)
       
-      if (rank > 30) break // 多爬一些，后面按品类筛选
+      if (rank > 30) break
       
       const nameMatch = linkHtml.match(/data-ga-item-name="([^"]+)"/)
       const productName = nameMatch ? nameMatch[1].trim() : `アクセサリー ${rank}`
@@ -654,10 +655,8 @@ async function fetchBuymaData(category = 'メイン') {
       const brandMatch = linkHtml.match(/data-ga-item-brand="([^"]+)"/)
       const brand = brandMatch ? brandMatch[1].trim() : 'OTHER'
       
-      // 品类从完整路径提取
       const categoryMatch = linkHtml.match(/data-ga-item-category="([^"]+)"/)
       const fullCategory = categoryMatch ? categoryMatch[1].trim() : ''
-      // 提取短品类名
       const categoryShort = fullCategory.includes('/') ? fullCategory.split('/').pop() : fullCategory
       
       const priceMatch = linkHtml.match(/data-ga-price="(\d+)"/)
@@ -668,14 +667,37 @@ async function fetchBuymaData(category = 'メイン') {
         itemId,
         productName,
         brand,
-        category: categoryShort, // 存储短品类名
-        fullCategory: fullCategory, // 存储完整品类路径
+        category: categoryShort,
+        fullCategory,
         price,
-        url: `https://www.buyma.com/item/${itemId}/`
+        url: `https://www.buyma.com/item/${itemId}/`,
+        image: ''
       })
     }
     
-    console.log(`BUYMA爬取: 获取${items.length}条数据`)
+    // 获取商品图片 - 每个商品单独请求详情页
+    console.log('正在获取商品图片...')
+    for (const item of items) {
+      try {
+        const detailRes = await fetch(item.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'text/html'
+          }
+        })
+        const detailHtml = await detailRes.text()
+        
+        // 提取第一张商品图片
+        const imgMatch = detailHtml.match(/class="item-main-image"[^>]+src="([^"]+)"/)
+        if (imgMatch) {
+          item.image = imgMatch[1]
+        }
+      } catch (e) {
+        // 图片获取失败，继续下一个
+      }
+    }
+    
+    console.log(`BUYMA爬取: 获取${items.length}条数据 (${items.filter(i => i.image).length}张图片)`)
     return items
   } catch (error) {
     console.error('BUYMA爬取失败:', error.message)
@@ -714,8 +736,8 @@ app.post('/api/necklaces/refresh/:month', async (req, res) => {
       const priceRange = item.price > 0 ? `${item.price.toLocaleString()}円` : '未定'
       const sales = Math.floor(Math.random() * 1000) + 100 // 销量仍需模拟
       
-      db.run('INSERT INTO necklaces (rank, month, website, productName, brand, priceRange, sales, url, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [item.rank, month, 'BUYMA', item.productName, item.brand, priceRange, sales, item.url, item.category || '', now])
+      db.run('INSERT INTO necklaces (rank, month, website, productName, brand, priceRange, sales, url, category, image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, 'BUYMA', item.productName, item.brand, priceRange, sales, item.url, item.category || '', item.image || '', now])
     })
     
     console.log(`从BUYMA获取了${buymaItems.length}条真实数据`)
