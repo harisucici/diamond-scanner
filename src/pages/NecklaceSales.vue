@@ -213,7 +213,8 @@ export default {
       { id: 'instagram', name: 'Instagram', icon: '📷', enabled: false, api: '/api/instagram' },
       { id: 'rakuten', name: '樂天', icon: '🏮', enabled: false, api: '/api/rakuten' },
       { id: 'mercari', name: 'メルカリ', icon: '📱', enabled: false, api: '/api/mercari' },
-      { id: 'yahoo-auction', name: 'Yahoo!拍賣', icon: '🔨', enabled: false, api: '/api/yahoo-auction' }
+      { id: 'yahoo-auction', name: 'Yahoo!拍賣', icon: '🔨', enabled: false, api: '/api/yahoo-auction' },
+      { id: 'saks', name: 'Saks', icon: '👜', enabled: false, api: '/api/saks' }
     ])
 
     // 启用的数据源

@@ -1989,3 +1989,165 @@ app.post('/api/instagram/refresh/:month', async (req, res) => {
 })
 
 console.log('Instagram API 已加载')
+
+// ============================================
+// Saks Fifth Avenue 爬虫
+// ============================================
+
+const createSaksTable = () => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS saks_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rank INTEGER,
+      month TEXT,
+      productName TEXT,
+      brand TEXT,
+      price REAL,
+      currency TEXT,
+      imageUrl TEXT,
+      url TEXT,
+      created_at TEXT
+    )
+  `)
+}
+
+const fetchSaksData = async (category = 'jewelry') => {
+  try {
+    const url = `https://www.saksfifthavenue.com/c/women-accessories-jewelry`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    console.log(`Saks Fifth Avenue: 获取HTML ${html.length} 字符`)
+    
+    // 从HTML中提取JSON数据（通常在script标签中）
+    const jsonMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/)
+    if (jsonMatch) {
+      try {
+        const data = JSON.parse(jsonMatch[1])
+        console.log('找到JSON-LD数据')
+        // 解析 product 数据
+        const products = Array.isArray(data) ? data : (data['@graph'] || [])
+        for (const p of products) {
+          if (p['@type'] === 'Product' && items.length < 30) {
+            items.push({
+              rank: rank++,
+              productName: p.name || '',
+              brand: p.brand?.name || 'OTHER',
+              price: p.offers?.lowPrice || p.offers?.price || 0,
+              currency: p.offers?.priceCurrency || 'USD',
+              imageUrl: p.image?.[0] || '',
+              url: p.url || ''
+            })
+          }
+        }
+      } catch (e) {
+        console.log('JSON解析失败:', e.message)
+      }
+    }
+    
+    // 备用：直接从HTML提取
+    if (items.length === 0) {
+      const productPatterns = [
+        /"name"\s*:\s*"([^"]+)"[^}]*"brand"\s*:\s*"([^"]+)"[^}]*"price"\s*:\s*(\d+)/g,
+        /data-product-name="([^"]+)"[^>]*data-brand="([^"]+)"[^>]*data-price="(\d+)/g,
+      ]
+      
+      for (const pattern of productPatterns) {
+        let match
+        while ((match = pattern.exec(html)) !== null && rank <= 30) {
+          const name = match[1] || ''
+          const brand = match[2] || 'OTHER'
+          const price = parseFloat(match[3] || '0')
+          
+          if (name && price > 0) {
+            items.push({
+              rank: rank++,
+              productName: name,
+              brand: brand,
+              price: price,
+              currency: 'USD',
+              imageUrl: '',
+              url: ''
+            })
+          }
+        }
+      }
+    }
+    
+    console.log(`Saks Fifth Avenue: 获取${items.length}条数据`)
+    return { items, html: html.substring(0, 5000) }
+  } catch (error) {
+    console.error('Saks爬取失败:', error.message)
+    return { items: [], html: '' }
+  }
+}
+
+// Saks API
+app.get('/api/saks', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    const result = db.exec(`SELECT * FROM saks_products WHERE month = '${tableMonth}' ORDER BY rank LIMIT 30`)
+    const columns = result[0]?.columns || []
+    const values = result[0]?.values || []
+    
+    const items = values.map(row => {
+      const obj = {}
+      columns.forEach((col, i) => obj[col] = row[i])
+      return obj
+    })
+    
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/saks/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec("SELECT DISTINCT month FROM saks_products ORDER BY month DESC")
+    const months = result[0]?.values?.map(v => v[0]) || []
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/saks/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  
+  try {
+    createSaksTable()
+    db.run(`DELETE FROM saks_products WHERE month = ?`, [month])
+    
+    const result = await fetchSaksData()
+    const now = new Date().toISOString()
+    
+    result.items.forEach(item => {
+      db.run(`INSERT INTO saks_products (rank, month, productName, brand, price, currency, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.imageUrl, item.url, now])
+    })
+    
+    saveDatabase()
+    res.json({ success: true, count: result.items.length, month, platform: 'Saks Fifth Avenue', items: result.items.slice(0, 3), debugHtml: result.html })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+console.log('Saks Fifth Avenue API 已加载')
