@@ -772,8 +772,11 @@ const fetchYahooAuctionData = async (keyword = 'アクセサリー') => {
     
     // Yahoo!Auction商品匹配
     const patterns = [
-      new RegExp('href="(//auctions\.yahoo\.co\.jp/item/[^"]+)"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d[,\d]*)', 'g'),
-      /data-auction-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*Product[^\"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
+      // 基于实际HTML结构调整的正则
+      /href="(\/item\/[^"]+)"[^>]*>[\s\S]*?<span[^>]*class="Product__price[^>]*>(\d[,\d]*)/g,
+      /href="(https?:\/\/auctions\.yahoo\.co\.jp\/item\/[^"]+)"[^>]*>[\s\S]*?>(\d[,\d]*)\s*円/g,
+      /class="Product__titleLink"[^>]*href="([^"]+)"[^>]*>([^<]+)<[\s\S]*?class="Product__price"[^>]*>(\d[,\d]*)/g,
+      /href="(\/item\/[^"]+)"[^>]*>[\s\S]*?>(\d[,\d]*)\s*円/g
     ]
     
     for (const pattern of patterns) {
