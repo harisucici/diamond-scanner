@@ -213,10 +213,11 @@ export default {
     const showSourceMenu = ref(false)
     const sourceStatus = ref([])
 
-    // 数据源配置 (默认只启用BUYMA和Fashionphile)
+    // 数据源配置 (默认只启用BUYMA、Fashionphile和Etsy)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' }
+      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
+      { id: 'etsy', name: 'Etsy', icon: '🎨', enabled: true, api: '/api/etsy' }
     ])
 
     // 启用的数据源
@@ -321,6 +322,10 @@ export default {
               // Fashionphile 使用当前月份
               const currentMonth = new Date().toISOString().slice(0, 7)
               url = `${source.api}?month=${currentMonth}`
+            } else if (source.id === 'etsy') {
+              // Etsy 使用当前月份
+              const currentMonth = new Date().toISOString().slice(0, 7)
+              url = `${source.api}?month=${currentMonth}`
             }
             
             const response = await fetch(url)
@@ -330,12 +335,23 @@ export default {
             items.forEach(item => {
               const normalizedItem = { ...item, _source: source.name }
               
-              // 统一字段名 - Fashionphile 没有 sales 字段，用 price 作为价格显示
+              // 统一字段名
               if (source.id === 'fashionphile') {
                 normalizedItem.productName = item.productName
                 normalizedItem.brand = item.brand
                 normalizedItem.price = item.price
                 normalizedItem.currency = item.currency || 'USD'
+                normalizedItem.url = item.url
+                normalizedItem.image = item.imageUrl
+              }
+              
+              // Etsy 数据格式
+              if (source.id === 'etsy') {
+                normalizedItem.productName = item.productName
+                normalizedItem.brand = item.brand
+                normalizedItem.price = item.price
+                normalizedItem.currency = item.currency || 'USD'
+                normalizedItem.sales = item.sales || 0
                 normalizedItem.url = item.url
                 normalizedItem.image = item.imageUrl
               }
@@ -393,13 +409,21 @@ export default {
         console.error('加载Fashionphile月份失败:', error)
       }
       
+      // 尝试获取 Etsy 月份
+      try {
+        const response = await fetch('/api/etsy/months')
+        const months = await response.json()
+        months.forEach(m => allMonths.add(m))
+      } catch (error) {
+        console.error('加载Etsy月份失败:', error)
+      }
+      
       availableMonths.value = Array.from(allMonths).sort().reverse()
       
       // 默认选中最新月份
       selectedMonth.value = availableMonths.value[0] || ''
       
       await loadData()
-      await loadSourceStatus()
     }
 
     onMounted(() => {
@@ -410,18 +434,18 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
-      // 确定刷新用的月份 (Fashionphile 总是用当前月份)
-      const fashionphileMonth = new Date().toISOString().slice(0, 7)
+      // 确定刷新用的月份 (Fashionphile 和 Etsy 总是用当前月份)
+      const currentMonth = new Date().toISOString().slice(0, 7)
       
       try {
         // 刷新所有启用的数据源
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            // Fashionphile 使用当前月份，其他数据源使用选中的月份
-            const refreshMonth = source.id === 'fashionphile' ? fashionphileMonth : selectedMonth.value
+            // Fashionphile 和 Etsy 使用当前月份，其他数据源使用选中的月份
+            const refreshMonthValue = (source.id === 'fashionphile' || source.id === 'etsy') ? currentMonth : selectedMonth.value
             
-            const response = await fetch(`${source.api}/refresh/${refreshMonth}`, {
+            const response = await fetch(`${source.api}/refresh/${refreshMonthValue}`, {
               method: 'POST'
             })
             const result = await response.json()
@@ -430,7 +454,7 @@ export default {
             // 获取完整数据
             let fullData = []
             try {
-              const dataRes = await fetch(`${source.api}?month=${refreshMonth}`)
+              const dataRes = await fetch(`${source.api}?month=${refreshMonthValue}`)
               fullData = await dataRes.json()
             } catch (e) {}
             
