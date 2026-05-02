@@ -2176,81 +2176,102 @@ const createFashionphileTable = () => {
 
 const fetchFashionphileData = async (category = 'jewelry') => {
   try {
-    // 使用 Shopify Storefront API 获取产品
-    const url = `https://www.fashionphile.com/products.json?limit=100`
+    // 品类映射: 前端类别 -> Fashionphile collection
+    const collectionMap = {
+      'necklaces': 'necklaces',
+      '项链': 'necklaces',
+      'earrings': 'earrings', 
+      '耳钉': 'earrings',
+      'bracelets': 'bracelets',
+      '手链': 'bracelets',
+      'rings': 'rings',
+      '戒指': 'rings',
+      'all': 'jewelry',
+      'jewelry': 'jewelry'
+    }
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    })
-    
-    const data = await response.json()
-    const allProducts = data.products || []
-    
-    // 过滤珠宝相关产品
-    const categoryLower = category.toLowerCase()
+    const collection = collectionMap[category.toLowerCase()] || 'jewelry'
     const items = []
     let rank = 1
     
-    // 定义珠宝相关关键词
-    const jewelryKeywords = ['jewelry', 'necklace', 'bracelet', 'ring', 'earring', 'pendant', 'chain', 'bangle', 'cuff', 'charm', 'brooch', 'watch']
-    
-    for (const p of allProducts) {
-      const titleLower = (p.title || '').toLowerCase()
-      const typeLower = (p.product_type || '').toLowerCase()
-      const vendorLower = (p.vendor || '').toLowerCase()
-      
-      // 检查是否匹配类别
-      const isJewelry = jewelryKeywords.some(k => 
-        typeLower.includes(k) || titleLower.includes(k)
-      )
-      
-      if (isJewelry || categoryLower === 'all') {
-        const variant = p.variants?.[0] || {}
-        items.push({
-          rank: rank++,
-          productName: p.title || '',
-          brand: p.vendor || 'OTHER',
-          price: parseFloat(variant.price) || 0,
-          currency: 'USD',
-          condition: '',
-          imageUrl: p.images?.[0]?.src || '',
-          url: `https://www.fashionphile.com/p/${p.handle}`,
-          productType: p.product_type || ''
-        })
-      }
-      
-      if (items >= 50) break
+    // 获取中文品类名称
+    const getCategoryName = (coll) => {
+      const map = { 'necklaces': '项链', 'earrings': '耳钉', 'bracelets': '手链', 'rings': '戒指' }
+      return map[coll] || ''
     }
     
-    // 如果没有找到足够的产品，添加其他产品作为补充
-    if (items.length < 10) {
-      for (const p of allProducts) {
-        if (items.length >= 30) break
+    // 如果是获取所有品类，分别获取各个分类
+    if (category.toLowerCase() === 'all' || category.toLowerCase() === 'jewelry') {
+      const collections = ['necklaces', 'earrings', 'bracelets', 'rings']
+      
+      for (const coll of collections) {
+        try {
+          const url = `https://www.fashionphile.com/collections/${coll}/products.json?limit=50`
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': 'application/json'
+            }
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            const products = data.products || []
+            
+            products.forEach(p => {
+              const variant = p.variants?.[0] || {}
+              items.push({
+                rank: rank++,
+                productName: p.title || '',
+                brand: p.vendor || 'OTHER',
+                price: parseFloat(variant.price) || 0,
+                currency: 'USD',
+                condition: '',
+                imageUrl: p.images?.[0]?.src || '',
+                url: `https://www.fashionphile.com/products/${p.handle}`,
+                productType: getCategoryName(coll),
+                collection: coll
+              })
+            })
+          }
+        } catch (e) {
+          console.log(`获取 ${coll} 失败:`, e.message)
+        }
+      }
+    } else {
+      // 获取特定分类
+      const url = `https://www.fashionphile.com/collections/${collection}/products.json?limit=50`
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const products = data.products || []
         
-        // 跳过已经是珠宝的产品
-        if (items.find(i => i.productName === p.title)) continue
-        
-        const variant = p.variants?.[0] || {}
-        items.push({
-          rank: rank++,
-          productName: p.title || '',
-          brand: p.vendor || 'OTHER',
-          price: parseFloat(variant.price) || 0,
-          currency: 'USD',
-          condition: '',
-          imageUrl: p.images?.[0]?.src || '',
-          url: `https://www.fashionphile.com/p/${p.handle}`,
-          productType: p.product_type || ''
+        products.forEach(p => {
+          const variant = p.variants?.[0] || {}
+          items.push({
+            rank: rank++,
+            productName: p.title || '',
+            brand: p.vendor || 'OTHER',
+            price: parseFloat(variant.price) || 0,
+            currency: 'USD',
+            condition: '',
+            imageUrl: p.images?.[0]?.src || '',
+            url: `https://www.fashionphile.com/products/${p.handle}`,
+            productType: getCategoryName(collection),
+            collection: collection
+          })
         })
       }
     }
     
     console.log(`Fashionphile: 获取${items.length}条${category}数据`)
-    return { items, source: 'shopify-api' }
+    return { items, source: 'shopify-collections-api' }
   } catch (error) {
     console.error('Fashionphile爬取失败:', error.message)
     return { items: [], source: 'error', error: error.message }
