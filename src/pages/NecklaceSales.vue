@@ -101,13 +101,13 @@
     </div>
 
     <!-- 数据源状态 -->
-    <div class="source-status" v-if="sourceStatus.length">
-      <div class="source-status-title">📊 数据源状态</div>
+    <div class="source-status">
+      <div class="source-status-title">📊 数据源</div>
       <div class="source-status-grid">
-        <div v-for="s in sourceStatus" :key="s.id" :class="['source-status-card', s.hasData ? 'has-data' : 'no-data']">
-          <span class="source-icon">{{ getSourceIcon(s.id) }}</span>
+        <div v-for="s in allSources" :key="s.id" :class="['source-status-card', s.enabled ? 'enabled' : 'disabled']">
+          <span class="source-icon">{{ s.icon }}</span>
           <span class="source-name">{{ s.name }}</span>
-          <span class="source-count">{{ s.count }}</span>
+          <span class="source-toggle" @click="toggleSource(s.id)">{{ s.enabled ? '✓' : '○' }}</span>
         </div>
       </div>
     </div>
@@ -532,12 +532,13 @@ export default {
 .source-status { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border-radius: 16px; padding: 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); }
 .source-status-title { font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 12px; font-weight: 500; }
 .source-status-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.source-status-card { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; }
-.source-status-card.has-data { background: rgba(0, 212, 255, 0.15); border: 1px solid rgba(0, 212, 255, 0.3); }
-.source-status-card.no-data { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); opacity: 0.6; }
+.source-status-card { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
+.source-status-card.enabled { background: rgba(0, 212, 255, 0.15); border: 1px solid rgba(0, 212, 255, 0.3); }
+.source-status-card.disabled { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); opacity: 0.5; }
+.source-status-card:hover { transform: scale(1.02); }
 .source-icon { font-size: 1rem; }
 .source-name { color: rgba(255,255,255,0.9); }
-.source-count { color: #00d4ff; font-weight: bold; }
+.source-toggle { margin-left: auto; color: #00d4ff; font-weight: bold; }
 
 /* Loading 对话框 */
 .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
