@@ -133,11 +133,14 @@
           <tbody>
             <tr v-for="item in filteredData" :key="item.id" @click="openItemUrl(item.url)" style="cursor: pointer" title="点击查看商品详情">
               <td><span class="rank" :class="'rank-' + item.rank">{{ item.rank }}</span></td>
-              <td>{{ item.website }}</td>
+              <td>{{ item._source || item.website }}</td>
               <td>{{ item.productName }}</td>
               <td>{{ item.brand }}</td>
-              <td>{{ item.priceRange }}</td>
-              <td class="sales">{{ formatNumber(item.sales) }}</td>
+              <!-- 根据数据源显示不同内容 -->
+              <td v-if="item._source === 'Fashionphile'">${{ formatNumber(item.price) }}</td>
+              <td v-else>{{ item.priceRange }}</td>
+              <td v-if="item._source === 'Fashionphile'" class="sales">-</td>
+              <td v-else class="sales">{{ formatNumber(item.sales) }}</td>
             </tr>
           </tbody>
         </table>
@@ -158,11 +161,14 @@
             <img v-if="item.image" :src="item.image" :alt="item.productName" class="card-image" />
           </div>
           <div class="card-content">
-            <div class="card-website">{{ item.website }}</div>
+            <div class="card-website">{{ item._source || item.website }}</div>
             <h3 class="card-product">{{ item.productName }}</h3>
             <div class="card-brand">🏷️ {{ item.brand }}</div>
-            <div class="card-price">💰 {{ item.priceRange }}</div>
-            <div class="card-sales">📈 销量: {{ formatNumber(item.sales) }}</div>
+            <!-- 根据数据源显示不同内容 -->
+            <div v-if="item._source === 'Fashionphile'" class="card-price">💰 ${{ formatNumber(item.price) }} {{ item.currency }}</div>
+            <div v-else class="card-price">💰 {{ item.priceRange }}</div>
+            <div v-if="item._source === 'Fashionphile'" class="card-sales">💎 奢侈品包</div>
+            <div v-else class="card-sales">📈 销量: {{ formatNumber(item.sales) }}</div>
           </div>
         </div>
       </div>
@@ -174,8 +180,8 @@
             <div v-for="item in filteredData" :key="item.id" class="bar-item">
               <div class="bar-label">{{ item.rank }}. {{ item.brand }}</div>
               <div class="bar-container">
-                <div class="bar" :style="{ width: (item.sales / maxSales * 100) + '%' }">
-                  <span class="bar-value">{{ formatNumber(item.sales) }}</span>
+                <div class="bar" :style="{ width: ((item._source === 'Fashionphile' ? item.price : item.sales) / maxSales * 100) + '%' }">
+                  <span class="bar-value">{{ item._source === 'Fashionphile' ? '$' + formatNumber(item.price) : formatNumber(item.sales) }}</span>
                 </div>
               </div>
             </div>
@@ -207,14 +213,10 @@ export default {
     const showSourceMenu = ref(false)
     const sourceStatus = ref([])
 
-    // 数据源配置 (默认只启用BUYMA)
+    // 数据源配置 (默认只启用BUYMA和Fashionphile)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'instagram', name: 'Instagram', icon: '📷', enabled: false, api: '/api/instagram' },
-      { id: 'rakuten', name: '樂天', icon: '🏮', enabled: false, api: '/api/rakuten' },
-      { id: 'mercari', name: 'メルカリ', icon: '📱', enabled: false, api: '/api/mercari' },
-      { id: 'yahoo-auction', name: 'Yahoo!拍賣', icon: '🔨', enabled: false, api: '/api/yahoo-auction' },
-      { id: 'saks', name: 'Saks', icon: '👜', enabled: false, api: '/api/saks' }
+      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' }
     ])
 
     // 启用的数据源
@@ -222,7 +224,13 @@ export default {
 
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
-      return Math.max(...data.value.map(item => item.sales))
+      return Math.max(...data.value.map(item => {
+        // Fashionphile 用 price，其他用 sales
+        if (item._source === 'Fashionphile') {
+          return item.price || 0
+        }
+        return item.sales || 0
+      }))
     })
 
     // 可用月份范围 (动态从API获取)
@@ -292,7 +300,7 @@ export default {
     const loadData = async () => {
       loading.value = true
       try {
-        // 加载品类列表
+        // 加载品类列表 (只有 BUYMA 有品类)
         await loadCategories()
         
         // 从所有启用的数据源加载数据
@@ -300,17 +308,39 @@ export default {
         
         for (const source of enabledSources.value) {
           try {
-            let url = `${source.api}?month=${selectedMonth.value}`
-            if (selectedCategory.value && source.id === 'buyma') {
-              url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+            let url = ''
+            
+            if (source.id === 'buyma') {
+              // BUYMA 使用月份参数
+              if (selectedCategory.value) {
+                url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+              } else {
+                url = `${source.api}?month=${selectedMonth.value}`
+              }
+            } else if (source.id === 'fashionphile') {
+              // Fashionphile 使用当前月份
+              const currentMonth = new Date().toISOString().slice(0, 7)
+              url = `${source.api}?month=${currentMonth}`
             }
             
             const response = await fetch(url)
             const items = await response.json()
             
-            // 为每个数据添加来源标识
+            // 为每个数据添加来源标识，并统一数据格式
             items.forEach(item => {
-              allData.push({ ...item, _source: source.name })
+              const normalizedItem = { ...item, _source: source.name }
+              
+              // 统一字段名 - Fashionphile 没有 sales 字段，用 price 作为价格显示
+              if (source.id === 'fashionphile') {
+                normalizedItem.productName = item.productName
+                normalizedItem.brand = item.brand
+                normalizedItem.price = item.price
+                normalizedItem.currency = item.currency || 'USD'
+                normalizedItem.url = item.url
+                normalizedItem.image = item.imageUrl
+              }
+              
+              allData.push(normalizedItem)
             })
           } catch (e) {
             console.warn(`加载 ${source.name} 失败:`, e)
@@ -321,7 +351,13 @@ export default {
         
         // 计算统计信息
         const totalRecords = allData.length
-        const totalSales = allData.reduce((sum, item) => sum + (item.sales || item.price || 0), 0)
+        // BUYMA 用 sales，Fashionphile 用 price
+        const totalSales = allData.reduce((sum, item) => {
+          if (item._source === 'Fashionphile') {
+            return sum + (item.price || 0)
+          }
+          return sum + (item.sales || 0)
+        }, 0)
         stats.value = {
           totalRecords,
           totalSales,
@@ -336,16 +372,32 @@ export default {
     }
 
     const loadMonths = async () => {
-      // 从API获取可用月份
+      // 从所有启用的数据源获取可用月份
+      const allMonths = new Set()
+      
       try {
+        // 获取 BUYMA 月份
         const response = await fetch('/api/necklaces/months')
-        availableMonths.value = await response.json()
-        // 默认选中最新月份
-        selectedMonth.value = availableMonths.value[availableMonths.value.length - 1] || ''
+        const months = await response.json()
+        months.forEach(m => allMonths.add(m))
       } catch (error) {
-        console.error('加载月份失败:', error)
-        selectedMonth.value = maxMonth.value
+        console.error('加载BUYMA月份失败:', error)
       }
+      
+      // 尝试获取 Fashionphile 月份
+      try {
+        const response = await fetch('/api/fashionphile/months')
+        const months = await response.json()
+        months.forEach(m => allMonths.add(m))
+      } catch (error) {
+        console.error('加载Fashionphile月份失败:', error)
+      }
+      
+      availableMonths.value = Array.from(allMonths).sort().reverse()
+      
+      // 默认选中最新月份
+      selectedMonth.value = availableMonths.value[0] || ''
+      
       await loadData()
       await loadSourceStatus()
     }
@@ -357,12 +409,19 @@ export default {
     const refreshMonth = async () => {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
+      
+      // 确定刷新用的月份 (Fashionphile 总是用当前月份)
+      const fashionphileMonth = new Date().toISOString().slice(0, 7)
+      
       try {
         // 刷新所有启用的数据源
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            const response = await fetch(`${source.api}/refresh/${selectedMonth.value}`, {
+            // Fashionphile 使用当前月份，其他数据源使用选中的月份
+            const refreshMonth = source.id === 'fashionphile' ? fashionphileMonth : selectedMonth.value
+            
+            const response = await fetch(`${source.api}/refresh/${refreshMonth}`, {
               method: 'POST'
             })
             const result = await response.json()
@@ -371,7 +430,7 @@ export default {
             // 获取完整数据
             let fullData = []
             try {
-              const dataRes = await fetch(`${source.api}?month=${selectedMonth.value}`)
+              const dataRes = await fetch(`${source.api}?month=${refreshMonth}`)
               fullData = await dataRes.json()
             } catch (e) {}
             

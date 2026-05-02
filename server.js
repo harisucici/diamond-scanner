@@ -2151,3 +2151,199 @@ app.post('/api/saks/refresh/:month', async (req, res) => {
 })
 
 console.log('Saks Fifth Avenue API 已加载')
+
+// ============================================
+// Fashionphile 爬虫
+// ============================================
+
+const createFashionphileTable = () => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS fashionphile_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rank INTEGER,
+      month TEXT,
+      productName TEXT,
+      brand TEXT,
+      price REAL,
+      currency TEXT,
+      condition TEXT,
+      imageUrl TEXT,
+      url TEXT,
+      created_at TEXT
+    )
+  `)
+}
+
+const fetchFashionphileData = async (category = 'jewelry') => {
+  try {
+    // 使用 Shopify Storefront API 获取产品
+    const url = `https://www.fashionphile.com/products.json?limit=100`
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    })
+    
+    const data = await response.json()
+    const allProducts = data.products || []
+    
+    // 过滤珠宝相关产品
+    const categoryLower = category.toLowerCase()
+    const items = []
+    let rank = 1
+    
+    // 定义珠宝相关关键词
+    const jewelryKeywords = ['jewelry', 'necklace', 'bracelet', 'ring', 'earring', 'pendant', 'chain', 'bangle', 'cuff', 'charm', 'brooch', 'watch']
+    
+    for (const p of allProducts) {
+      const titleLower = (p.title || '').toLowerCase()
+      const typeLower = (p.product_type || '').toLowerCase()
+      const vendorLower = (p.vendor || '').toLowerCase()
+      
+      // 检查是否匹配类别
+      const isJewelry = jewelryKeywords.some(k => 
+        typeLower.includes(k) || titleLower.includes(k)
+      )
+      
+      if (isJewelry || categoryLower === 'all') {
+        const variant = p.variants?.[0] || {}
+        items.push({
+          rank: rank++,
+          productName: p.title || '',
+          brand: p.vendor || 'OTHER',
+          price: parseFloat(variant.price) || 0,
+          currency: 'USD',
+          condition: '',
+          imageUrl: p.images?.[0]?.src || '',
+          url: `https://www.fashionphile.com/p/${p.handle}`,
+          productType: p.product_type || ''
+        })
+      }
+      
+      if (items >= 50) break
+    }
+    
+    // 如果没有找到足够的产品，添加其他产品作为补充
+    if (items.length < 10) {
+      for (const p of allProducts) {
+        if (items.length >= 30) break
+        
+        // 跳过已经是珠宝的产品
+        if (items.find(i => i.productName === p.title)) continue
+        
+        const variant = p.variants?.[0] || {}
+        items.push({
+          rank: rank++,
+          productName: p.title || '',
+          brand: p.vendor || 'OTHER',
+          price: parseFloat(variant.price) || 0,
+          currency: 'USD',
+          condition: '',
+          imageUrl: p.images?.[0]?.src || '',
+          url: `https://www.fashionphile.com/p/${p.handle}`,
+          productType: p.product_type || ''
+        })
+      }
+    }
+    
+    console.log(`Fashionphile: 获取${items.length}条${category}数据`)
+    return { items, source: 'shopify-api' }
+  } catch (error) {
+    console.error('Fashionphile爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  }
+}
+
+// Fashionphile API
+app.get('/api/fashionphile', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let sql = 'SELECT * FROM fashionphile_products WHERE month = ?'
+    const params = [tableMonth]
+    
+    if (brand) {
+      sql += ' AND brand = ?'
+      params.push(brand)
+    }
+    
+    sql += ' ORDER BY rank ASC'
+    
+    if (limit) {
+      sql += ' LIMIT ?'
+      params.push(parseInt(limit))
+    }
+    
+    const stmt = db.prepare(sql)
+    if (params.length > 0) stmt.bind(params)
+    
+    const results = []
+    while (stmt.step()) results.push(stmt.getAsObject())
+    stmt.free()
+    
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/fashionphile/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec('SELECT DISTINCT month FROM fashionphile_products ORDER BY month DESC')
+    const months = result[0]?.values?.map(v => v[0]) || []
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/fashionphile/brands', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec('SELECT DISTINCT brand FROM fashionphile_products ORDER BY brand')
+    const brands = result[0]?.values?.map(v => v[0]) || []
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/fashionphile/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    createFashionphileTable()
+    db.run('DELETE FROM fashionphile_products WHERE month = ?', [month])
+    
+    const result = await fetchFashionphileData(category || 'jewelry')
+    const now = new Date().toISOString()
+    
+    result.items.forEach(item => {
+      db.run(
+        'INSERT INTO fashionphile_products (rank, month, productName, brand, price, currency, condition, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.condition, item.imageUrl, item.url, now]
+      )
+    })
+    
+    saveDatabase()
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Fashionphile',
+      items: result.items.slice(0, 5)
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+console.log('Fashionphile API 已加载')
