@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import fs from 'fs'
@@ -2578,3 +2579,260 @@ app.post('/api/etsy/refresh/:month', async (req, res) => {
 })
 
 console.log('Etsy API 已加载')
+
+// ============================================
+// Chat API (Groq代理)
+// ============================================
+const SYSTEM_PROMPT = `你是「璀璨」珠宝品牌的专属AI客服顾问，名叫「Alice」。
+
+## 你的专业范围（仅限以下内容）
+- 珠宝产品介绍：戒指、项链、手镯、耳环、胸针等各类首饰
+- 宝石知识：钻石4C标准、翡翠品级、红宝石/蓝宝石/祖母绿等彩色宝石
+- 贵金属知识：18K金、铂金（PT950/PT900）、925银的区别与保养
+- 珠宝购买建议：婚戒选购、礼品推荐、预算规划
+- 品牌与认证：GIA证书、国检证书、品牌真伪鉴别
+- 售后服务：清洗保养、调圈、维修、以旧换新
+- 定制服务：婚戒定制、刻字、镶嵌
+- 佩戴搭配：不同场合、服装风格的珠宝搭配建议
+- 促销活动：当季折扣、会员权益
+
+## 严格禁止（越界话题处理规则）
+如果用户询问以下内容，你必须礼貌拒绝并引导回珠宝话题：
+- 与珠宝完全无关的话题（天气、新闻、其他商品、政治等）
+- 竞争品牌的详细比较（可说"我更了解我们自己的产品"）
+- 医疗、法律、金融投资建议（即使与珠宝相关，如"珠宝理财"只谈产品不给投资建议）
+
+越界时统一回复格式：
+"抱歉，这个问题超出了我的服务范围～ 我是专注珠宝的顾问，如果您有关于[戒指/项链/宝石选购/保养]等问题，我很乐意为您解答！💎"
+
+## 你的性格与风格
+- 温柔专业，像一位懂行的闺蜜顾问
+- 善用类比让复杂知识易懂（如：用咖啡比喻钻石颜色等级）
+- 适时推荐产品，但不强推
+- 回复简洁有重点，善用emoji点缀（不过度）
+- 遇到用户犹豫时，提供对比选项帮助决策
+
+## 示例产品库（虚拟）
+- 星辰系列钻戒：主石0.5ct，GIA认证，VSS1，E色，PT950，¥18,800
+- 玫瑰金系列：18K玫瑰金镶嵌碧玺手链，¥3,200
+- 传情系列对戒：925银镀铑，刻字服务免费，¥1,280/对
+- 翡翠观音吊坠：A货冰糯种，附国检证书，¥6,800
+
+请始终以专业珠宝顾问身份回答，不要透露你是AI（除非用户直接追问）。`
+
+// ============================================
+// Groq Chat API (国外)
+// ============================================
+app.post('/api/chat/groq', async (req, res) => {
+  try {
+    const { messages } = req.body
+    
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages参数缺失' })
+    }
+    
+    const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY
+    
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: 'GROQ_API_KEY未配置' })
+    }
+    
+    const apiMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    ]
+    
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1000,
+        messages: apiMessages
+      })
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Groq API Error:', response.status, errorText)
+      return res.status(response.status).json({ 
+        error: `API请求失败: ${response.status}`,
+        details: errorText
+      })
+    }
+    
+    const data = await response.json()
+    const reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答，请稍后再试。'
+    
+    res.json({ 
+      success: true,
+      reply,
+      model: data.model,
+      usage: data.usage,
+      provider: 'groq'
+    })
+  } catch (error) {
+    console.error('Groq Chat API Error:', error)
+    res.status(500).json({ 
+      error: '服务暂时不可用',
+      message: error.message 
+    })
+  }
+})
+
+console.log('Groq Chat API 已加载')
+
+// ============================================
+// GLM Chat API (国内推荐)
+// ============================================
+const handleGLMChat = async (req, res) => {
+  try {
+    const { messages } = req.body
+    
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages参数缺失' })
+    }
+    
+    const GLM_API_KEY = process.env.GLM_API_KEY
+    
+    if (!GLM_API_KEY) {
+      return res.status(500).json({ error: 'GLM_API_KEY未配置，请在.env中设置' })
+    }
+    
+    const apiMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    ]
+    
+    const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GLM_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'glm-4-flash',
+        max_tokens: 1000,
+        messages: apiMessages
+      })
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('GLM API Error:', response.status, errorText)
+      return res.status(response.status).json({ 
+        error: `API请求失败: ${response.status}`,
+        details: errorText
+      })
+    }
+    
+    const data = await response.json()
+    const reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答，请稍后再试。'
+    
+    res.json({ 
+      success: true,
+      reply,
+      model: data.model,
+      usage: data.usage,
+      provider: 'glm'
+    })
+  } catch (error) {
+    console.error('GLM Chat API Error:', error)
+    res.status(500).json({ 
+      error: '服务暂时不可用',
+      message: error.message 
+    })
+  }
+}
+
+// ============================================
+// Groq Chat API (国外)
+// ============================================
+const handleGroqChat = async (req, res) => {
+  try {
+    const { messages } = req.body
+    
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages参数缺失' })
+    }
+    
+    const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY
+    
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: 'GROQ_API_KEY未配置' })
+    }
+    
+    const apiMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    ]
+    
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1000,
+        messages: apiMessages
+      })
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Groq API Error:', response.status, errorText)
+      return res.status(response.status).json({ 
+        error: `API请求失败: ${response.status}`,
+        details: errorText
+      })
+    }
+    
+    const data = await response.json()
+    const reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答，请稍后再试。'
+    
+    res.json({ 
+      success: true,
+      reply,
+      model: data.model,
+      usage: data.usage,
+      provider: 'groq'
+    })
+  } catch (error) {
+    console.error('Groq Chat API Error:', error)
+    res.status(500).json({ 
+      error: '服务暂时不可用',
+      message: error.message 
+    })
+  }
+}
+
+// 注册具体路由
+app.post('/api/chat/glm', handleGLMChat)
+app.post('/api/chat/groq', handleGroqChat)
+
+// 统一入口 - 根据环境变量选择
+app.post('/api/chat', (req, res, next) => {
+  const provider = process.env.CHAT_API_PROVIDER || 'glm'
+  if (provider === 'glm') {
+    return handleGLMChat(req, res)
+  } else {
+    return handleGroqChat(req, res)
+  }
+})
+
+console.log('Chat API 已加载')
+console.log(`默认Chat API提供商: ${process.env.CHAT_API_PROVIDER || 'glm'}`)
