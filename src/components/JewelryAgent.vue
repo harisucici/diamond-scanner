@@ -13,7 +13,7 @@
         <div class="header-left">
           <div class="agent-avatar">💎</div>
           <div class="agent-info">
-            <div class="agent-name">璀璨珠宝 · 晶晶顾问</div>
+            <div class="agent-name">Alice · An顾问</div>
             <div class="agent-status">● 专业珠宝咨询服务</div>
           </div>
         </div>
@@ -75,51 +75,8 @@
 
 <script>
 import { ref, onMounted, nextTick, watch } from 'vue'
-
-const SYSTEM_PROMPT = `你是「璀璨」珠宝品牌的专属AI客服顾问，名叫「Alice」。
-
-## 你的专业范围（仅限以下内容）
-- 珠宝产品介绍：戒指、项链、手镯、耳环、胸针等各类首饰
-- 宝石知识：钻石4C标准、翡翠品级、红宝石/蓝宝石/祖母绿等彩色宝石
-- 贵金属知识：18K金、铂金（PT950/PT900）、925银的区别与保养
-- 珠宝购买建议：婚戒选购、礼品推荐、预算规划
-- 品牌与认证：GIA证书、国检证书、品牌真伪鉴别
-- 售后服务：清洗保养、调圈、维修、以旧换新
-- 定制服务：婚戒定制、刻字、镶嵌
-- 佩戴搭配：不同场合、服装风格的珠宝搭配建议
-- 促销活动：当季折扣、会员权益
-
-## 严格禁止（越界话题处理规则）
-如果用户询问以下内容，你必须礼貌拒绝并引导回珠宝话题：
-- 与珠宝完全无关的话题（天气、新闻、其他商品、政治等）
-- 竞争品牌的详细比较（可说"我更了解我们自己的产品"）
-- 医疗、法律、金融投资建议（即使与珠宝相关，如"珠宝理财"只谈产品不给投资建议）
-
-越界时统一回复格式：
-"抱歉，这个问题超出了我的服务范围～ 我是专注珠宝的顾问，如果您有关于[戒指/项链/宝石选购/保养]等问题，我很乐意为您解答！💎"
-
-## 你的性格与风格
-- 温柔专业，像一位懂行的闺蜜顾问
-- 善用类比让复杂知识易懂（如：用咖啡比喻钻石颜色等级）
-- 适时推荐产品，但不强推
-- 回复简洁有重点，善用emoji点缀（不过度）
-- 遇到用户犹豫时，提供对比选项帮助决策
-
-## 示例产品库（虚拟）
-- 星辰系列钻戒：主石0.5ct，GIA认证，VSS1，E色，PT950，¥18,800
-- 玫瑰金系列：18K玫瑰金镶嵌碧玺手链，¥3,200
-- 传情系列对戒：925银镀铑，刻字服务免费，¥1,280/对
-- 翡翠观音吊坠：A货冰糯种，附国检证书，¥6,800
-
-请始终以专业珠宝顾问身份回答，不要透露你是AI（除非用户直接追问）。`
-
-const QUICK_QUESTIONS = [
-  "钻石4C怎么选？",
-  "求婚戒指预算¥2万够吗？",
-  "黄金和铂金哪个更适合婚戒？",
-  "珠宝怎么日常保养？",
-  "GIA证书怎么验证真伪？",
-]
+import { chatService } from '../services/chatService'
+import { QUICK_QUESTIONS } from '../config/chat.js'
 
 export default {
   name: 'JewelryAgent',
@@ -162,41 +119,14 @@ export default {
       const userText = text || inputText.value.trim()
       if (!userText || loading.value) return
 
-      messages.value.push({ role: "user", content: userText })
       inputText.value = ""
       loading.value = true
 
       try {
-        const apiMessages = messages.value.map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content,
-        }))
-
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY || ""}`
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            max_tokens: 1000,
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              ...apiMessages
-            ],
-          }),
-        })
-
-        const data = await response.json()
-        const reply = data.choices?.[0]?.message?.content || "抱歉，我暂时无法回答，请稍后再试。"
-        messages.value.push({ role: "assistant", content: reply })
+        const updatedMessages = await chatService.sendMessage(messages.value, userText)
+        messages.value = updatedMessages
       } catch (err) {
-        console.error('API Error:', err)
-        messages.value.push({ 
-          role: "assistant", 
-          content: "网络出现了一点小问题，请稍后重试～ 💫" 
-        })
+        console.error('Send Message Error:', err)
       } finally {
         loading.value = false
         inputRef.value?.focus()
