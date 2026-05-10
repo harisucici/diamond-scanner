@@ -2789,19 +2789,343 @@ const handleGroqChat = async (req, res) => {
   }
 }
 
+// ============================================
+// 产品搜索API (用于AI推荐)
+// ============================================
+const searchAllProducts = (keyword, limit = 10) => {
+  if (!db) return []
+  
+  const results = []
+  const searchTerm = `%${keyword}%`
+  
+  try {
+    // BUYMA/necklaces
+    const necklaceStmt = db.prepare(`
+      SELECT 'necklaces' as source, productName, brand, priceRange as price, url, image, category, month
+      FROM necklaces 
+      WHERE productName LIKE ? OR brand LIKE ? OR category LIKE ?
+      ORDER BY rank ASC LIMIT ?
+    `)
+    necklaceStmt.bind([searchTerm, searchTerm, searchTerm, limit])
+    while (necklaceStmt.step()) {
+      const row = necklaceStmt.getAsObject()
+      row.price = row.price || '询价'
+      results.push(row)
+    }
+    necklaceStmt.free()
+    
+    // Fashionphile
+    try {
+      const fashionStmt = db.prepare(`
+        SELECT 'fashionphile' as source, productName, brand, price, currency, url, imageUrl as image, '' as category
+        FROM fashionphile_products 
+        WHERE productName LIKE ? OR brand LIKE ?
+        ORDER BY rank ASC LIMIT ?
+      `)
+      fashionStmt.bind([searchTerm, searchTerm, limit])
+      while (fashionStmt.step()) {
+        const row = fashionStmt.getAsObject()
+        row.price = row.price ? `${row.currency || 'USD'} ${row.price}` : '询价'
+        results.push(row)
+      }
+      fashionStmt.free()
+    } catch (e) {}
+    
+    // Etsy
+    try {
+      const etsyStmt = db.prepare(`
+        SELECT 'etsy' as source, productName, brand, price, currency, url, imageUrl as image, '' as category
+        FROM etsy_products 
+        WHERE productName LIKE ? OR brand LIKE ?
+        ORDER BY rank ASC LIMIT ?
+      `)
+      etsyStmt.bind([searchTerm, searchTerm, limit])
+      while (etsyStmt.step()) {
+        const row = etsyStmt.getAsObject()
+        row.price = row.price ? `${row.currency || 'USD'} ${row.price}` : '询价'
+        results.push(row)
+      }
+      etsyStmt.free()
+    } catch (e) {}
+    
+    // Saks
+    try {
+      const saksStmt = db.prepare(`
+        SELECT 'saks' as source, productName, brand, price, currency, url, imageUrl as image, '' as category
+        FROM saks_products 
+        WHERE productName LIKE ? OR brand LIKE ?
+        ORDER BY rank ASC LIMIT ?
+      `)
+      saksStmt.bind([searchTerm, searchTerm, limit])
+      while (saksStmt.step()) {
+        const row = saksStmt.getAsObject()
+        row.price = row.price ? `${row.currency || 'USD'} ${row.price}` : '询价'
+        results.push(row)
+      }
+      saksStmt.free()
+    } catch (e) {}
+    
+    // Mercari
+    try {
+      const mercariStmt = db.prepare(`
+        SELECT 'mercari' as source, productName, brand, price, '' as currency, url, '' as image, '' as category
+        FROM mercari_products 
+        WHERE productName LIKE ? OR brand LIKE ?
+        ORDER BY rank ASC LIMIT ?
+      `)
+      mercariStmt.bind([searchTerm, searchTerm, limit])
+      while (mercariStmt.step()) {
+        const row = mercariStmt.getAsObject()
+        row.price = row.price ? `JPY ${row.price}` : '询价'
+        results.push(row)
+      }
+      mercariStmt.free()
+    } catch (e) {}
+    
+    // Rakuten
+    try {
+      const rakutenStmt = db.prepare(`
+        SELECT 'rakuten' as source, productName, brand, price, '' as currency, url, '' as image, '' as category
+        FROM rakuten_products 
+        WHERE productName LIKE ? OR brand LIKE ?
+        ORDER BY rank ASC LIMIT ?
+      `)
+      rakutenStmt.bind([searchTerm, searchTerm, limit])
+      while (rakutenStmt.step()) {
+        const row = rakutenStmt.getAsObject()
+        row.price = row.price ? `JPY ${row.price}` : '询价'
+        results.push(row)
+      }
+      rakutenStmt.free()
+    } catch (e) {}
+    
+  } catch (error) {
+    console.error('产品搜索失败:', error.message)
+  }
+  
+  return results.slice(0, limit)
+}
+
+// 产品搜索API
+app.get('/api/products/search', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  
+  const { keyword, limit } = req.query
+  if (!keyword) {
+    return res.json([])
+  }
+  
+  const results = searchAllProducts(keyword, parseInt(limit) || 10)
+  res.json(results)
+})
+
+console.log('产品搜索API 已加载')
+
+// ============================================
+// 带产品推荐的Chat API
+// ============================================
+const handleChatWithProducts = async (req, res) => {
+  try {
+    const { messages } = req.body
+    
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages参数缺失' })
+    }
+    
+    // 获取最后一条用户消息，提取关键词搜索产品
+    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')
+    let products = []
+    
+    if (lastUserMessage) {
+      // 从用户消息中提取关键词
+      const keywords = extractKeywords(lastUserMessage.content)
+      if (keywords.length > 0) {
+        products = searchAllProducts(keywords[0], 5)
+      }
+    }
+    
+    // 构建产品信息上下文
+    let productContext = ''
+    if (products.length > 0) {
+      productContext = '\n\n【重要：当前库存中的相关产品】\n以下是系统从库存中为您匹配的产品，你必须在回答中只从这些产品中选择推荐，不可编造其他产品：\n\n' + products.map((p, i) => 
+        `${i + 1}. 【${p.brand}】${p.productName}\n   价格: ${p.price}\n   来源: ${p.source}\n   ${p.url ? `链接: ${p.url}` : '(暂无链接)'}`
+      ).join('\n\n')
+    } else {
+      productContext = '\n\n【注意】当前库存中没有找到完全匹配的产品，请根据用户需求提供一般性建议，并告知可以记录需求或推荐相似品类。'
+    }
+    
+    // 选择API提供商
+    const provider = process.env.CHAT_API_PROVIDER || 'glm'
+    const apiMessages = [
+      { 
+        role: 'system', 
+        content: SYSTEM_PROMPT + productContext + '\n\n【回答要求】\n1. 根据用户需求，从上述产品列表中选择最合适的进行推荐\n2. 必须说明产品的品牌、名称、价格和来源\n3. 如果有购买链接，提醒用户点击产品卡片查看详情\n4. 如果没有合适产品，诚实告知并提供替代建议'
+      },
+      ...messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    ]
+    
+    let reply = ''
+    let model = ''
+    let usage = {}
+    
+    if (provider === 'glm') {
+      const GLM_API_KEY = process.env.GLM_API_KEY
+      if (!GLM_API_KEY) {
+        return res.status(500).json({ error: 'GLM_API_KEY未配置' })
+      }
+      
+      const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GLM_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'glm-4-flash',
+          max_tokens: 1000,
+          messages: apiMessages
+        })
+      })
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        return res.status(response.status).json({ error: `API请求失败: ${response.status}`, details: errorText })
+      }
+      
+      const data = await response.json()
+      reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答，请稍后再试。'
+      model = data.model
+      usage = data.usage
+    } else {
+      const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY
+      if (!GROQ_API_KEY) {
+        return res.status(500).json({ error: 'GROQ_API_KEY未配置' })
+      }
+      
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 1000,
+          messages: apiMessages
+        })
+      })
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        return res.status(response.status).json({ error: `API请求失败: ${response.status}`, details: errorText })
+      }
+      
+      const data = await response.json()
+      reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答，请稍后再试。'
+      model = data.model
+      usage = data.usage
+    }
+    
+    res.json({
+      success: true,
+      reply,
+      products: products.length > 0 ? products : undefined,
+      model,
+      usage,
+      provider
+    })
+  } catch (error) {
+    console.error('Chat API Error:', error)
+    res.status(500).json({ error: '服务暂时不可用', message: error.message })
+  }
+}
+
+// 关键词提取函数
+const extractKeywords = (text) => {
+  const keywords = []
+  const lowerText = text.toLowerCase()
+  
+  // 品类关键词映射（中文 -> 英文搜索词）
+  const categoryMap = {
+    '项链': 'necklace',
+    '吊坠': 'pendant',
+    'choker': 'choker',
+    '戒指': 'ring',
+    '指环': 'ring',
+    '手链': 'bracelet',
+    '手镯': 'bracelet',
+    '耳环': 'earring',
+    '耳钉': 'earring',
+    '耳坠': 'earring',
+    '胸针': 'brooch',
+    '冠冕': 'crown',
+    '唇钉': '',
+    '舌钉': '',
+    'bracelet': 'bracelet',
+    'necklace': 'necklace',
+    'ring': 'ring',
+    'earring': 'earring',
+    'jewelry': 'jewelry',
+    'pendant': 'pendant',
+    'choker': 'choker'
+  }
+  
+  // 品牌关键词
+  const brands = [
+    'cartier', 'tiffany', 'bvlgari', 'chanel', 'hermes', 'gucci', 'louis vuitton', 'lv',
+    'givenchy', 'dior', 'prada', 'ami', 'mm6', 'margiela', 'asclo', 'ofuse',
+    '卡地亚', '蒂芙尼', '宝格丽', '香奈儿', '爱马仕', '古驰', '路易威登',
+    '纪梵希', '迪奥', '普拉达'
+  ]
+  
+  // 材质关键词
+  const materials = [
+    '钻石', '黄金', '铂金', 'k金', '银', '珍珠', '翡翠', '红宝石', '蓝宝石',
+    'diamond', 'gold', 'platinum', 'silver', 'pearl', 'jade', 'ruby', 'sapphire'
+  ]
+  
+  // 检查品类
+  for (const [cn, en] of Object.entries(categoryMap)) {
+    if (lowerText.includes(cn.toLowerCase())) {
+      keywords.push(en || cn)
+    }
+  }
+  
+  // 检查品牌
+  for (const brand of brands) {
+    if (lowerText.includes(brand.toLowerCase())) {
+      keywords.push(brand)
+    }
+  }
+  
+  // 检查材质
+  for (const material of materials) {
+    if (lowerText.includes(material.toLowerCase())) {
+      keywords.push(material)
+    }
+  }
+  
+  // 如果没有匹配到任何关键词，尝试直接用用户输入的部分词语搜索
+  if (keywords.length === 0 && text.length > 1) {
+    // 提取可能的搜索词（去除常见虚词）
+    const words = text.replace(/推荐|一个|一条|一款|有没有|有什么|帮我|请|我想|要|可以|吗|呢|吧|的/g, '').trim()
+    if (words.length > 0) {
+      keywords.push(words)
+    }
+  }
+  
+  return [...new Set(keywords)] // 去重
+}
+
 // 注册具体路由
 app.post('/api/chat/glm', handleGLMChat)
 app.post('/api/chat/groq', handleGroqChat)
 
-// 统一入口 - 根据环境变量选择
-app.post('/api/chat', (req, res, next) => {
-  const provider = process.env.CHAT_API_PROVIDER || 'glm'
-  if (provider === 'glm') {
-    return handleGLMChat(req, res)
-  } else {
-    return handleGroqChat(req, res)
-  }
-})
+// 统一入口 - 使用带产品推荐的新版本
+app.post('/api/chat', handleChatWithProducts)
 
 console.log('Chat API 已加载')
 console.log(`默认Chat API提供商: ${process.env.CHAT_API_PROVIDER || 'glm'}`)

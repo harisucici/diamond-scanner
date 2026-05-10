@@ -20,13 +20,20 @@ export const chatService = {
 
       const data = await response.json();
       const reply = data.reply || "抱歉，我暂时无法回答，请稍后再试。";
+      const products = data.products || [];
       
-      return [...updatedMessages, { role: "assistant", content: reply }];
+      const assistantMessage = { 
+        role: "assistant", 
+        content: reply,
+        products: products.length > 0 ? products : undefined
+      };
+      
+      return [...updatedMessages, assistantMessage];
     } catch (err) {
       console.error('Chat Service Error:', err);
       return [...messages, { role: "user", content: userMessage }, { 
         role: "assistant", 
-        content: "网络出现了一点小问题，请稍后重试～ 💫" 
+        content: "网络出现了一点小问题，请稍后重试。" 
       }];
     }
   }
