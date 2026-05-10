@@ -24,7 +24,29 @@
       <div class="chat-messages" ref="messagesContainer">
         <div v-for="(msg, i) in messages" :key="i" class="msg-wrapper" :class="msg.role">
           <div v-if="msg.role === 'assistant'" class="msg-avatar">💎</div>
-          <div class="msg-bubble">{{ msg.content }}</div>
+          <div class="msg-content">
+            <div class="msg-bubble">{{ msg.content }}</div>
+            <div v-if="msg.products && msg.products.length > 0" class="products-container">
+              <div class="products-title">为您推荐以下产品（点击查看详情）</div>
+              <div class="products-grid">
+                <div v-for="(product, pi) in msg.products" :key="pi" class="product-card" @click="openProduct(product)">
+                  <div class="product-image" v-if="product.image">
+                    <img :src="product.image" :alt="product.productName" @error="handleImageError" />
+                  </div>
+                  <div class="product-image product-placeholder" v-else>
+                    <span>💎</span>
+                  </div>
+                  <div class="product-info">
+                    <div class="product-brand">{{ product.brand }}</div>
+                    <div class="product-name">{{ product.productName }}</div>
+                    <div class="product-price">{{ product.price }}</div>
+                    <div class="product-source">来源: {{ product.source }}</div>
+                    <div class="product-link" v-if="product.url">点击查看详情 →</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div v-if="msg.role === 'user'" class="msg-avatar user">👤</div>
         </div>
         
@@ -137,6 +159,16 @@ export default {
       sendMessage(question)
     }
     
+    const openProduct = (product) => {
+      if (product.url) {
+        window.open(product.url, '_blank')
+      }
+    }
+    
+    const handleImageError = (e) => {
+      e.target.style.display = 'none'
+    }
+    
     onMounted(() => {
       // 组件挂载时不需要检查登录状态，这个逻辑在父组件处理
     })
@@ -151,7 +183,9 @@ export default {
       quickQuestions,
       toggleAgent,
       sendMessage,
-      sendQuickQuestion
+      sendQuickQuestion,
+      openProduct,
+      handleImageError
     }
   }
 }
@@ -355,11 +389,27 @@ export default {
   white-space: pre-wrap;
 }
 
+.msg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 75%;
+}
+
+.msg-wrapper.user .msg-content {
+  align-items: flex-end;
+}
+
+.msg-wrapper.assistant .msg-content {
+  align-items: flex-start;
+}
+
 .msg-wrapper.user .msg-bubble {
   background: linear-gradient(135deg, #8b1a4a, #6b0f38);
   border: 1px solid rgba(180, 60, 100, 0.4);
   color: #ffe0ec;
   border-radius: 16px 4px 16px 16px;
+  max-width: 100%;
 }
 
 .msg-wrapper.assistant .msg-bubble {
@@ -367,6 +417,111 @@ export default {
   border: 1px solid rgba(212, 175, 55, 0.2);
   color: #e8d5a3;
   border-radius: 4px 16px 16px 16px;
+  max-width: 100%;
+}
+
+.products-container {
+  background: rgba(10, 5, 20, 0.9);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 4px;
+}
+
+.products-title {
+  color: #d4af37;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+.products-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.product-card {
+  display: flex;
+  gap: 10px;
+  background: rgba(212, 175, 55, 0.05);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.product-card:hover {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.4);
+  transform: translateX(2px);
+}
+
+.product-image {
+  width: 50px;
+  height: 50px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(212, 175, 55, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-placeholder {
+  font-size: 20px;
+}
+
+.product-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.product-brand {
+  color: #d4af37;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.product-name {
+  color: #e8d5a3;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-price {
+  color: #f0d060;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.product-source {
+  color: rgba(232, 213, 163, 0.6);
+  font-size: 9px;
+}
+
+.product-link {
+  color: #d4af37;
+  font-size: 10px;
+  margin-top: 2px;
+  font-weight: 500;
 }
 
 .msg-bubble.loading {
