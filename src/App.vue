@@ -78,14 +78,14 @@
         <div class="chat-input">
           <textarea
             v-model="inputText"
-            @keydown.enter.prevent="sendMessage"
+            @keydown.enter.prevent="sendMessage()"
             placeholder="请输入您的珠宝咨询问题..."
             rows="1"
             ref="inputRef"
           ></textarea>
           <button 
             class="send-btn" 
-            @click="sendMessage"
+            @click="sendMessage()"
             :disabled="loading || !inputText.trim()"
           >
             ➤
@@ -224,25 +224,31 @@ export default {
 
       try {
         const apiMessages = messages.value.map((m) => ({
-          role: m.role,
+          role: m.role === "assistant" ? "assistant" : "user",
           content: m.content,
         }))
 
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY || ""}`
+          },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
+            model: "llama-3.3-70b-versatile",
             max_tokens: 1000,
-            system: SYSTEM_PROMPT,
-            messages: apiMessages,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              ...apiMessages
+            ],
           }),
         })
 
         const data = await response.json()
-        const reply = data.content?.[0]?.text || "抱歉，我暂时无法回答，请稍后再试。"
+        const reply = data.choices?.[0]?.message?.content || "抱歉，我暂时无法回答，请稍后再试。"
         messages.value.push({ role: "assistant", content: reply })
       } catch (err) {
+        console.error('API Error:', err)
         messages.value.push({ 
           role: "assistant", 
           content: "网络出现了一点小问题，请稍后重试～ 💫" 
