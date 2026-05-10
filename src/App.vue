@@ -18,6 +18,9 @@
       <footer class="main-footer">
         <p>日本配饰销量排行 v1.0</p>
       </footer>
+      
+      <!-- 珠宝顾问组件 -->
+      <JewelryAgent />
     </template>
   </div>
 </template>
@@ -26,12 +29,14 @@
 import { ref, onMounted } from 'vue'
 import NecklaceSales from './pages/NecklaceSales.vue'
 import LoginPage from './pages/LoginPage.vue'
+import JewelryAgent from './components/JewelryAgent.vue'
 
 export default {
   name: 'App',
   components: {
     NecklaceSales,
-    LoginPage
+    LoginPage,
+    JewelryAgent
   },
   setup() {
     const isLoggedIn = ref(false)
@@ -39,7 +44,6 @@ export default {
     const checkLogin = () => {
       const loggedIn = localStorage.getItem('isLoggedIn')
       if (loggedIn) {
-        // 检查是否在24小时内登录
         const loginTime = parseInt(localStorage.getItem('loginTime') || '0')
         const now = Date.now()
         const oneDay = 24 * 60 * 60 * 1000
@@ -47,7 +51,6 @@ export default {
         if (now - loginTime < oneDay) {
           isLoggedIn.value = true
         } else {
-          // 超过24小时，重新登录
           localStorage.removeItem('isLoggedIn')
           localStorage.removeItem('loginTime')
         }
@@ -143,4 +146,5 @@ html, body {
   color: rgba(255, 255, 255, 0.3);
   font-size: 0.85rem;
 }
+
 </style>
