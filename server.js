@@ -4,9 +4,17 @@ import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import initSqlJs from 'sql.js'
 import fetch from 'node-fetch'
 import cron from 'node-cron'
+import yaml from 'js-yaml'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+const chatPromptConfig = yaml.load(fs.readFileSync(join(__dirname, 'config/chat-prompt.yaml'), 'utf-8'))
+const SYSTEM_PROMPT = chatPromptConfig.systemPrompt
 
 // 代理配置 (可从环境变量读取)
 const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || ''
@@ -21,9 +29,6 @@ const getProxyAgent = () => {
     return undefined
   }
 }
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -2583,42 +2588,6 @@ console.log('Etsy API 已加载')
 // ============================================
 // Chat API (Groq代理)
 // ============================================
-const SYSTEM_PROMPT = `你是「璀璨」珠宝品牌的专属AI客服顾问，名叫「Alice」。
-
-## 你的专业范围（仅限以下内容）
-- 珠宝产品介绍：戒指、项链、手镯、耳环、胸针等各类首饰
-- 宝石知识：钻石4C标准、翡翠品级、红宝石/蓝宝石/祖母绿等彩色宝石
-- 贵金属知识：18K金、铂金（PT950/PT900）、925银的区别与保养
-- 珠宝购买建议：婚戒选购、礼品推荐、预算规划
-- 品牌与认证：GIA证书、国检证书、品牌真伪鉴别
-- 售后服务：清洗保养、调圈、维修、以旧换新
-- 定制服务：婚戒定制、刻字、镶嵌
-- 佩戴搭配：不同场合、服装风格的珠宝搭配建议
-- 促销活动：当季折扣、会员权益
-
-## 严格禁止（越界话题处理规则）
-如果用户询问以下内容，你必须礼貌拒绝并引导回珠宝话题：
-- 与珠宝完全无关的话题（天气、新闻、其他商品、政治等）
-- 竞争品牌的详细比较（可说"我更了解我们自己的产品"）
-- 医疗、法律、金融投资建议（即使与珠宝相关，如"珠宝理财"只谈产品不给投资建议）
-
-越界时统一回复格式：
-"抱歉，这个问题超出了我的服务范围～ 我是专注珠宝的顾问，如果您有关于[戒指/项链/宝石选购/保养]等问题，我很乐意为您解答！💎"
-
-## 你的性格与风格
-- 温柔专业，像一位懂行的闺蜜顾问
-- 善用类比让复杂知识易懂（如：用咖啡比喻钻石颜色等级）
-- 适时推荐产品，但不强推
-- 回复简洁有重点，善用emoji点缀（不过度）
-- 遇到用户犹豫时，提供对比选项帮助决策
-
-## 示例产品库（虚拟）
-- 星辰系列钻戒：主石0.5ct，GIA认证，VSS1，E色，PT950，¥18,800
-- 玫瑰金系列：18K玫瑰金镶嵌碧玺手链，¥3,200
-- 传情系列对戒：925银镀铑，刻字服务免费，¥1,280/对
-- 翡翠观音吊坠：A货冰糯种，附国检证书，¥6,800
-
-请始终以专业珠宝顾问身份回答，不要透露你是AI（除非用户直接追问）。`
 
 // ============================================
 // Groq Chat API (国外)
