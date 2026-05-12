@@ -1,0 +1,294 @@
+# 宝石品类配置 / Gemstone Category Configuration
+# 支持的宝石品类及搜索关键词
+
+categories:
+  # 培育钻石 / Lab-Grown Diamond
+  lab_diamond:
+    name_zh: "培育钻石"
+    name_en: "Lab-Grown Diamond"
+    keywords:
+      english:
+        - "lab grown diamond"
+        - "lab created diamond"
+        - "synthetic diamond"
+        - "cultured diamond"
+        - "cvd diamond"
+        - "hpht diamond"
+        - "man made diamond"
+      chinese:
+        - "培育钻石"
+        - "合成钻石"
+        - "人造钻石"
+        - "实验室钻石"
+        - "CVD钻石"
+        - "HPHT钻石"
+    color: "#b9f2ff"
+    icon: "💎"
+
+  # 培育祖母绿 / Lab-Grown Emerald
+  lab_emerald:
+    name_zh: "培育祖母绿"
+    name_en: "Lab-Grown Emerald"
+    keywords:
+      english:
+        - "lab grown emerald"
+        - "cultured emerald"
+        - "synthetic emerald"
+        - "created emerald"
+        - "hydrothermal emerald"
+        - "man made emerald"
+      chinese:
+        - "培育祖母绿"
+        - "合成祖母绿"
+        - "人造祖母绿"
+        - "实验室祖母绿"
+        - "水热法祖母绿"
+    color: "#50c878"
+    icon: "💚"
+
+  # 培育红宝石 / Lab-Grown Ruby
+  lab_ruby:
+    name_zh: "培育红宝石"
+    name_en: "Lab-Grown Ruby"
+    keywords:
+      english:
+        - "lab grown ruby"
+        - "synthetic ruby"
+        - "cultured ruby"
+        - "created ruby"
+        - "man made ruby"
+        - "verneuil ruby"
+      chinese:
+        - "培育红宝石"
+        - "合成红宝石"
+        - "人造红宝石"
+        - "实验室红宝石"
+    color: "#e0115f"
+    icon: "❤️"
+
+  # 培育蓝宝石 / Lab-Grown Sapphire
+  lab_sapphire:
+    name_zh: "培育蓝宝石"
+    name_en: "Lab-Grown Sapphire"
+    keywords:
+      english:
+        - "lab grown sapphire"
+        - "synthetic sapphire"
+        - "cultured sapphire"
+        - "created sapphire"
+        - "man made sapphire"
+      chinese:
+        - "培育蓝宝石"
+        - "合成蓝宝石"
+        - "人造蓝宝石"
+        - "实验室蓝宝石"
+    color: "#0f52ba"
+    icon: "💙"
+
+  # 海水珍珠 / Saltwater Pearl
+  saltwater_pearl:
+    name_zh: "海水珍珠"
+    name_en: "Saltwater Pearl"
+    keywords:
+      english:
+        - "saltwater pearl"
+        - "akoya pearl"
+        - "south sea pearl"
+        - "tahitian pearl"
+        - "sea pearl"
+        - "marine pearl"
+      chinese:
+        - "海水珍珠"
+        - "Akoya珍珠"
+        - "南洋珍珠"
+        - "大溪地珍珠"
+        - "海水珠"
+    color: "#fdeef4"
+    icon: "🤍"
+
+  # 淡水珍珠 / Freshwater Pearl
+  freshwater_pearl:
+    name_zh: "淡水珍珠"
+    name_en: "Freshwater Pearl"
+    keywords:
+      english:
+        - "freshwater pearl"
+        - "cultured freshwater pearl"
+        - "river pearl"
+        - "lake pearl"
+      chinese:
+        - "淡水珍珠"
+        - "淡水珠"
+        - "养殖珍珠"
+    color: "#fffaf0"
+    icon: "🦪"
+
+# 数据源配置 / Data Source Configuration
+data_sources:
+  # Amazon (via Rainforest API)
+  rainforest:
+    name: "Amazon"
+    name_zh: "亚马逊"
+    icon: "📦"
+    enabled: true
+    api_url: "https://api.rainforestapi.com/request"
+    priority: 1
+    
+  # 日本电商网站 (保留原有数据源)
+  zozotown:
+    name: "ZOZOTOWN"
+    name_zh: "ZOZOTOWN"
+    icon: "🛍️"
+    enabled: true
+    priority: 2
+    
+  rakuma:
+    name: "Rakuma"
+    name_zh: "ラクマ"
+    icon: "📱"
+    enabled: true
+    priority: 3
+    
+  paypay:
+    name: "PayPay"
+    name_zh: "PayPayフリマ"
+    icon: "💳"
+    enabled: true
+    priority: 4
+    
+  yahoo_shopping:
+    name: "Yahoo Shopping"
+    name_zh: "Yahoo!ショッピング"
+    icon: "🛒"
+    enabled: true
+    priority: 5
+    
+  mercari:
+    name: "Mercari"
+    name_zh: "メルカリ"
+    icon: "🏷️"
+    enabled: true
+    priority: 6
+    
+  rakuten:
+    name: "Rakuten"
+    name_zh: "楽天"
+    icon: "🎏"
+    enabled: true
+    priority: 7
+    
+  kakaku:
+    name: "Kakaku"
+    name_zh: "価格.com"
+    icon: "💰"
+    enabled: true
+    priority: 8
+    
+  amazon_jp:
+    name: "Amazon Japan"
+    name_zh: "Amazon.co.jp"
+    icon: "amazon"
+    enabled: true
+    priority: 9
+    
+  qoo10:
+    name: "Qoo10"
+    name_zh: "Qoo10"
+    icon: "🌐"
+    enabled: true
+    priority: 10
+    
+  etsy:
+    name: "Etsy"
+    name_zh: "Etsy"
+    icon: "🎨"
+    enabled: true
+    priority: 11
+    
+  fashionphile:
+    name: "Fashionphile"
+    name_zh: "Fashionphile"
+    icon: "👜"
+    enabled: true
+    priority: 12
+    
+  saks:
+    name: "Saks Fifth Avenue"
+    name_zh: "Saks"
+    icon: "🏬"
+    enabled: true
+    priority: 13
+
+# 国家映射 / Country Mapping
+country_mapping:
+  # 国家代码
+  "US": "United States"
+  "CN": "China"
+  "IN": "India"
+  "TH": "Thailand"
+  "HK": "Hong Kong"
+  "TW": "Taiwan"
+  "UK": "United Kingdom"
+  "GB": "United Kingdom"
+  "DE": "Germany"
+  "FR": "France"
+  "JP": "Japan"
+  "KR": "South Korea"
+  "AU": "Australia"
+  "CA": "Canada"
+  "VN": "Vietnam"
+  "MY": "Malaysia"
+  "SG": "Singapore"
+  "PH": "Philippines"
+  "ID": "Indonesia"
+  
+  # 中国省份/城市
+  "广东": "China - Guangdong"
+  "深圳": "China - Shenzhen"
+  "广州": "China - Guangzhou"
+  "浙江": "China - Zhejiang"
+  "杭州": "China - Hangzhou"
+  "义乌": "China - Yiwu"
+  "江苏": "China - Jiangsu"
+  "南京": "China - Nanjing"
+  "上海": "China - Shanghai"
+  "北京": "China - Beijing"
+  "福建": "China - Fujian"
+  "厦门": "China - Xiamen"
+  "山东": "China - Shandong"
+  "河南": "China - Henan"
+  "四川": "China - Sichuan"
+  "云南": "China - Yunnan"
+  "广西": "China - Guangxi"
+  "北海": "China - Beihai"
+  
+  # 英文城市名
+  "Shenzhen": "China - Shenzhen"
+  "Guangzhou": "China - Guangzhou"
+  "Yiwu": "China - Yiwu"
+  "Hangzhou": "China - Hangzhou"
+  "Shanghai": "China - Shanghai"
+  "Beijing": "China - Beijing"
+
+# 价格区间配置 / Price Range Configuration
+price_ranges:
+  under_100:
+    label_zh: "100美元以下"
+    label_en: "Under $100"
+    min: 0
+    max: 100
+  range_100_500:
+    label_zh: "100-500美元"
+    label_en: "$100 - $500"
+    min: 100
+    max: 500
+  range_500_1000:
+    label_zh: "500-1000美元"
+    label_en: "$500 - $1000"
+    min: 500
+    max: 1000
+  over_1000:
+    label_zh: "1000美元以上"
+    label_en: "Over $1000"
+    min: 1000
+    max: null

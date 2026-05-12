@@ -1,233 +1,138 @@
 # 💎 Diamond Scanner
 
-A Vue.js web application for managing diamond information with JSON database backend.
+日本配饰销量排行数据平台 - 多数据源聚合分析
 
-## 🚀 Features
+## 📊 功能特性
 
-- **Vue.js 3** frontend with Composition API
-- **Express.js** backend API
-- **JSON file database** (no SQLite compilation required)
-- **Responsive design** for desktop and mobile
-- **Ready for deployment** to Render.com
-- **Full CRUD operations** for diamond data
-- **Real-time database status** display
-- **API connection testing**
+- **多数据源支持**: BUYMA、Fashionphile、Amazon宝石
+- **实时数据刷新**: 支持手动和自动刷新
+- **智能分类**: 按品类、品牌、价格筛选
+- **数据可视化**: 销量排行、趋势图表
+- **AI助手**: 智能问答和数据分析
+- **用户认证**: 安全的登录系统
 
-## 📸 Screenshot
-
-![Diamond Scanner Interface](https://via.placeholder.com/800x450/667eea/ffffff?text=Diamond+Scanner+Vue.js+App)
-
-## 🏗️ Project Structure
+## 🏗️ 项目结构
 
 ```
 diamond-scanner/
-├── src/                    # Vue.js source files
-│   ├── App.vue            # Main Vue component
-│   └── main.js            # Vue entry point
-├── db/                    # JSON database files
-├── server.js             # Express.js backend server
-├── package.json          # Dependencies and scripts
-├── vite.config.js        # Vite configuration
-├── render.yaml           # Render deployment config
-├── start-local.sh        # Local startup script
-└── README.md             # This file
+├── src/                       # 前端源码
+│   ├── App.vue               # 主应用组件
+│   ├── main.js               # 入口文件
+│   ├── pages/                # 页面组件
+│   │   ├── LoginPage.vue     # 登录页
+│   │   ├── NecklaceSales.vue # 配饰排行页
+│   │   └── GemstoneFetcher.vue # 宝石数据页
+│   ├── components/           # 公共组件
+│   │   └── JewelryAgent.vue  # AI助手组件
+│   ├── services/             # 服务层
+│   │   ├── chatService.js    # AI对话服务
+│   │   └── gemstoneFetcher.js # 宝石数据获取
+│   └── config/               # 配置文件
+│       └── chat.js           # AI配置
+├── config/                   # 后端配置
+│   ├── chat-prompt.yaml      # AI提示词配置
+│   └── gemstone_categories.yaml # 宝石品类配置
+├── db/                       # 数据库目录
+│   ├── database.sqlite       # 主数据库
+│   └── gemstone.sqlite       # 宝石数据库
+├── server.js                 # 后端服务 (Express)
 ```
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-### Local Development
+### 1. 安装依赖
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd diamond-scanner
-
-# Install dependencies
 npm install
+```
 
-# Start backend server (port 3000)
+### 2. 配置环境变量
+
+创建 `.env` 文件:
+
+```env
+# AI服务 (二选一)
+GROQ_API_KEY=your_groq_key
+GLM_API_KEY=your_zhipu_key
+CHAT_API_PROVIDER=glm
+
+# Amazon数据API
+RAINFOREST_API_KEY=your_rainforest_key
+
+# 服务配置
+PORT=3000
+NODE_ENV=development
+```
+
+### 3. 启动服务
+
+**开发模式** (前后端分离):
+
+```bash
+# 终端1: 启动后端
 node server.js
 
-# In another terminal, start frontend dev server (port 5173)
+# 终端2: 启动前端
 npm run dev
 ```
 
-### Using Startup Script
+**生产模式**:
+
 ```bash
-chmod +x start-local.sh
-./start-local.sh
+npm run build
+NODE_ENV=production node server.js
 ```
 
-## 🌐 Access URLs
+### 4. 访问应用
 
-- **Frontend Application**: http://localhost:5173
-- **Backend API**: http://localhost:3000
-- **Health Check**: http://localhost:3000/api/health
-- **API Test**: http://localhost:3000/api/test
+- 前端页面: http://localhost:5173
+- 后端API: http://localhost:3000
+- 配饰排行: http://localhost:5173/#/necklace-sales
 
-## 📡 API Endpoints
+### 登录信息
 
-### GET `/api/health`
-Health check and database status.
+- 用户名: `harisucici`
+- 密码: `ppnn13%`
 
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Database is connected",
-  "diamondsCount": 4,
-  "timestamp": "2026-04-23T07:41:52.714Z",
-  "storage": "in-memory (JSON file persistence)"
-}
+## 📡 数据源
+
+| 数据源 | 状态 | 说明 |
+|--------|------|------|
+| 🛍️ BUYMA | ✅ 正常 | 日本配饰销量排行 |
+| 💎 Fashionphile | ✅ 正常 | 奢侈品配饰数据 |
+| 💠 Amazon宝石 | ⚠️ 需配置 | 需要Rainforest API Key |
+
+## 🔧 常用命令
+
+```bash
+# 开发模式
+node server.js          # 启动后端 (端口3000)
+npm run dev             # 启动前端 (端口5173)
+
+# 生产模式
+npm run build           # 构建前端
+NODE_ENV=production node server.js  # 启动服务
+
+# 查看数据库
+sqlite3 db/database.sqlite "SELECT COUNT(*) FROM jewelry_sales;"
 ```
 
-### GET `/api/diamonds`
-Get all diamond records.
+## 📝 API端点
 
-### POST `/api/diamonds`
-Add a new diamond record.
+- `GET /api/health` - 健康检查
+- `GET /api/jewelry-sales` - 获取配饰销量数据
+- `POST /api/jewelry-sales/refresh` - 刷新数据
+- `GET /api/gemstone/categories` - 获取宝石品类
+- `POST /api/amazon-gemstones/refresh/:month` - 刷新Amazon宝石数据
 
-**Request Body:**
-```json
-{
-  "carat": 1.5,
-  "color": "D",
-  "clarity": "IF",
-  "price": 15000
-}
-```
+## 🛠️ 技术栈
 
-### DELETE `/api/diamonds/:id`
-Delete a diamond record.
-
-### GET `/api/test`
-Test API connection.
-
-## 💻 Frontend Features
-
-### 1. Welcome Screen
-- Modern gradient design
-- Hello World message
-- Project description
-
-### 2. Database Controls
-- **Check Database**: Verify connection and status
-- **Add Random Diamond**: Add random sample data
-- **View All Data**: Display all records in table
-- **Clear All Data**: Remove all records (with confirmation)
-- **Test API Connection**: Verify backend connectivity
-
-### 3. Data Display
-- Responsive table with all diamond records
-- Columns: ID, Carat, Color, Clarity, Price
-- Real-time updates when data changes
-
-## 🛠️ Technology Stack
-
-- **Frontend**: Vue.js 3 + Vite + Composition API
-- **Backend**: Express.js + CORS
-- **Database**: In-memory with JSON file persistence
-- **Styling**: Pure CSS with responsive design
-- **Build Tool**: Vite
-- **Deployment**: Render.com compatible
-
-## 🚢 Deployment to Render.com
-
-### Automatic Deployment (recommended)
-1. Push this repository to GitHub/GitLab
-2. Render automatically detects `render.yaml`
-3. Creates web service with proper configuration
-
-### Manual Deployment
-1. Go to [render.com](https://render.com)
-2. Click "New +" → "Web Service"
-3. Connect your Git repository
-4. Configure:
-   - **Name**: diamond-scanner
-   - **Environment**: Node
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
-   - **Environment Variables**:
-     - `NODE_ENV=production`
-     - `PORT=3000`
-
-## 📁 File Details
-
-### `render.yaml` - Render Deployment Config
-```yaml
-services:
-  - type: web
-    name: diamond-scanner
-    env: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 3000
-```
-
-### Database Schema
-Data is stored in `db/diamonds.json` with the following structure:
-```json
-[
-  {
-    "id": 1,
-    "carat": 1.5,
-    "color": "D",
-    "clarity": "IF",
-    "price": 15000,
-    "created_at": "2026-04-23T07:39:56.854Z"
-  }
-]
-```
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-1. **Port already in use**
-   ```bash
-   lsof -i :5173
-   lsof -i :3000
-   ```
-
-2. **Node modules not installed**
-   ```bash
-   rm -rf node_modules package-lock.json
-   npm install
-   ```
-
-3. **API 404 errors in production**
-   - Ensure `NODE_ENV=production` is set
-   - Check `render.yaml` configuration
-   - Verify all API routes are defined in `server.js`
-
-### Development Tips
-- Frontend proxies API requests to `localhost:3000` in development
-- Database automatically creates sample data on first run
-- JSON database file persists between server restarts
-- Use `start-local.sh` for easy local testing
+- **前端**: Vue.js 3 + Vite + Element Plus
+- **后端**: Express.js + better-sqlite3
+- **数据库**: SQLite
+- **AI**: Groq API / 智谱GLM
+- **部署**: Render.com
 
 ## 📄 License
 
 MIT
-
-## 👥 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## 🙏 Acknowledgments
-
-- Built with Vue.js and Express.js
-- Deploy-ready for Render.com
-- Zero SQLite compilation required
-- Perfect for learning full-stack Vue.js development
-
----
-
-**Happy Diamond Scanning!** 💎
