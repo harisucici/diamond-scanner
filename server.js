@@ -44,7 +44,9 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 let db = null
+let gemstoneDb = null // 独立的宝石数据库
 const dbPath = path.join(__dirname, 'db', 'database.sqlite')
+const gemstoneDbPath = path.join(__dirname, 'db', 'gemstone.sqlite') // 宝石数据库路径
 
 const COMMON_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -69,6 +71,97 @@ const saveDatabase = () => {
     } catch (error) {
       console.log('Could not save database:', error.message)
     }
+  }
+}
+
+const saveGemstoneDatabase = () => {
+  if (gemstoneDb) {
+    try {
+      const data = gemstoneDb.export()
+      const buffer = Buffer.from(data)
+      ensureDbDir()
+      fs.writeFileSync(gemstoneDbPath, buffer)
+    } catch (error) {
+      console.log('Could not save gemstone database:', error.message)
+    }
+  }
+}
+
+const initGemstoneDatabase = async () => {
+  try {
+    const SQL = await initSqlJs()
+    
+    if (fs.existsSync(gemstoneDbPath)) {
+      const buffer = fs.readFileSync(gemstoneDbPath)
+      gemstoneDb = new SQL.Database(buffer)
+      console.log('Loaded existing gemstone database')
+    } else {
+      gemstoneDb = new SQL.Database()
+      console.log('Created new gemstone database')
+    }
+    
+    // 创建宝石产品表
+    gemstoneDb.run(`
+      CREATE TABLE IF NOT EXISTS gemstone_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id TEXT,
+        category_name_zh TEXT,
+        category_name_en TEXT,
+        keyword TEXT,
+        platform TEXT,
+        title TEXT,
+        price REAL,
+        currency TEXT,
+        rating REAL,
+        reviews INTEGER,
+        seller TEXT,
+        seller_location TEXT,
+        country TEXT,
+        asin TEXT UNIQUE,
+        url TEXT,
+        image TEXT,
+        is_prime INTEGER,
+        is_best_seller INTEGER,
+        timestamp TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    
+    // 创建分类汇总表
+    gemstoneDb.run(`
+      CREATE TABLE IF NOT EXISTS gemstone_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id TEXT UNIQUE,
+        category_name_zh TEXT,
+        category_name_en TEXT,
+        total_products INTEGER DEFAULT 0,
+        last_updated TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    
+    // 创建刷新历史表
+    gemstoneDb.run(`
+      CREATE TABLE IF NOT EXISTS gemstone_refresh_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        refresh_date TEXT,
+        month TEXT,
+        total_products INTEGER,
+        categories_count INTEGER,
+        status TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    
+    // 创建索引
+    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_category ON gemstone_products(category_id)`)
+    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_asin ON gemstone_products(asin)`)
+    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_price ON gemstone_products(price)`)
+    
+    saveGemstoneDatabase()
+    console.log('Gemstone database initialized successfully')
+  } catch (error) {
+    console.error('Gemstone database initialization error:', error)
   }
 }
 
@@ -1887,11 +1980,89 @@ const GEMSTONE_KEYWORDS = {
 }
 
 // Rainforest API 配置
-const RAINFOREST_API_KEY = process.env.RAINFOREST_API_KEY || ''
 const RAINFOREST_BASE_URL = 'https://api.rainforestapi.com/request'
+
+// 动态获取 RAINFOREST_API_KEY（支持热更新）
+const getRainforestApiKey = () => {
+  // 优先从环境变量获取
+  if (process.env.RAINFOREST_API_KEY) {
+    return process.env.RAINFOREST_API_KEY
+  }
+  // 尝试从 .env 文件重新读取
+  try {
+    const envPath = path.join(__dirname, '.env')
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf-8')
+      const match = envContent.match(/RAINFOREST_API_KEY=(.+)/)
+      if (match) {
+        return match[1].trim().replace(/^["']|["']$/g, '')
+      }
+    }
+  } catch (e) {
+    console.error('读取 .env 文件失败:', e)
+  }
+  return ''
+}
+
+// 调试 API - 检查 Rainforest API Key
+app.get('/api/debug/rainforest-key', (req, res) => {
+  const key = getRainforestApiKey()
+  res.json({
+    keyExists: !!key,
+    keyPrefix: key ? key.substring(0, 12) + '...' : null,
+    keyLength: key ? key.length : 0,
+    envKey: process.env.RAINFOREST_API_KEY ? 'exists' : 'not found'
+  })
+})
+
+// 调试 API - 测试 Rainforest API 调用
+app.get('/api/debug/test-rainforest', async (req, res) => {
+  const key = getRainforestApiKey()
+  
+  // 方式1: 直接拼接
+  const testUrl1 = `https://api.rainforestapi.com/request?api_key=${key}&type=search&amazon_domain=amazon.com&search_term=lab+diamond`
+  
+  // 方式2: 使用 URLSearchParams（和函数中一样）
+  const params = new URLSearchParams({
+    api_key: key,
+    type: 'search',
+    amazon_domain: 'amazon.com',
+    search_term: 'lab diamond',
+    page: '1',
+    output: 'json'
+  })
+  const testUrl2 = `https://api.rainforestapi.com/request?${params.toString()}`
+  
+  console.log('=== 方式1 (直接拼接) ===')
+  console.log('URL:', testUrl1.substring(0, 100))
+  const resp1 = await fetch(testUrl1)
+  const data1 = await resp1.json()
+  console.log('Status:', resp1.status, 'Success:', data1.request_info?.success)
+  
+  console.log('\n=== 方式2 (URLSearchParams) ===')
+  console.log('URL:', testUrl2.substring(0, 100))
+  const resp2 = await fetch(testUrl2)
+  const data2 = await resp2.json()
+  console.log('Status:', resp2.status, 'Success:', data2.request_info?.success)
+  
+  res.json({
+    method1: {
+      status: resp1.status,
+      success: data1.request_info?.success,
+      resultCount: data1.search_results?.length
+    },
+    method2: {
+      status: resp2.status,
+      success: data2.request_info?.success,
+      resultCount: data2.search_results?.length,
+      error: data2.request_info?.error || null
+    }
+  })
+})
 
 // 使用 Rainforest API 获取 Amazon 数据
 const fetchGemstoneFromAmazon = async (keyword, domain = 'amazon.com', pages = 1) => {
+  const RAINFOREST_API_KEY = getRainforestApiKey()
   if (!RAINFOREST_API_KEY) {
     console.log('⚠️ RAINFOREST_API_KEY 未配置，跳过 Amazon 数据获取')
     return []
@@ -1912,8 +2083,11 @@ const fetchGemstoneFromAmazon = async (keyword, domain = 'amazon.com', pages = 1
       
       const url = `${RAINFOREST_BASE_URL}?${params.toString()}`
       console.log(`🔍 [Rainforest] 搜索: ${keyword} (page ${page})`)
+      console.log(`📌 API Key: ${RAINFOREST_API_KEY ? RAINFOREST_API_KEY.substring(0, 12) + '...' : '未设置'}`)
+      console.log(`🌐 完整URL: ${url}`)
       
       const response = await fetch(url)
+      console.log(`📡 响应状态: ${response.status}`)
       
       if (!response.ok) {
         if (response.status === 401) {
@@ -1968,6 +2142,7 @@ app.post('/api/gemstone/fetch/:categoryId', async (req, res) => {
     return res.status(400).json({ error: `未知的品类ID: ${categoryId}` })
   }
   
+  const RAINFOREST_API_KEY = getRainforestApiKey()
   if (!RAINFOREST_API_KEY) {
     return res.status(400).json({ error: 'RAINFOREST_API_KEY 未配置' })
   }
@@ -2047,6 +2222,7 @@ app.post('/api/gemstone/fetch/:categoryId', async (req, res) => {
 app.post('/api/gemstone/fetch-all', async (req, res) => {
   const options = req.body
   
+  const RAINFOREST_API_KEY = getRainforestApiKey()
   if (!RAINFOREST_API_KEY) {
     return res.status(400).json({ error: 'RAINFOREST_API_KEY 未配置' })
   }
@@ -2123,13 +2299,557 @@ app.get('/api/gemstone/categories', (req, res) => {
   res.json(GEMSTONE_CATEGORIES)
 })
 
+// 接收 n8n 发送的宝石数据
+app.post('/api/gemstone/import', async (req, res) => {
+  console.log('收到 /api/gemstone/import 请求')
+  
+  try {
+    const data = req.body.data || req.body
+    
+    if (!data || !data.summary) {
+      return res.status(400).json({ error: '无效的数据格式' })
+    }
+    
+    console.log(`📊 导入宝石数据报告`)
+    console.log(`   总产品数: ${data.summary.total_products}`)
+    console.log(`   去重产品: ${data.summary.unique_products}`)
+    console.log(`   总价值: $${data.summary.total_value}`)
+    console.log(`   品类数: ${data.summary.categories_analyzed}`)
+    
+    // 创建宝石数据表（如果不存在）
+    db.run(`
+      CREATE TABLE IF NOT EXISTS gemstone_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id TEXT,
+        category_name_zh TEXT,
+        category_name_en TEXT,
+        keyword TEXT,
+        platform TEXT,
+        title TEXT,
+        price REAL,
+        currency TEXT,
+        rating REAL,
+        reviews INTEGER,
+        seller TEXT,
+        seller_location TEXT,
+        country TEXT,
+        asin TEXT UNIQUE,
+        url TEXT,
+        image TEXT,
+        is_prime INTEGER,
+        is_best_seller INTEGER,
+        timestamp TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    
+    // 创建报告表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS gemstone_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_timestamp TEXT,
+        total_products INTEGER,
+        unique_products INTEGER,
+        total_value REAL,
+        avg_price REAL,
+        avg_rating REAL,
+        categories_analyzed INTEGER,
+        report_data TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    
+    // 保存报告摘要
+    const reportTimestamp = data.summary.generated_at
+    const now = new Date().toISOString()
+    
+    db.run(`
+      INSERT INTO gemstone_reports (
+        report_timestamp, total_products, unique_products, 
+        total_value, avg_price, avg_rating, categories_analyzed, 
+        report_data, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      reportTimestamp,
+      data.summary.total_products,
+      data.summary.unique_products,
+      data.summary.total_value,
+      data.summary.avg_price,
+      data.summary.avg_rating,
+      data.summary.categories_analyzed,
+      JSON.stringify(data),
+      now
+    ])
+    
+    // 保存产品数据
+    let insertedCount = 0
+    let updatedCount = 0
+    
+    if (data.all_products && Array.isArray(data.all_products)) {
+      for (const product of data.all_products) {
+        if (!product.asin) continue
+        
+        // 检查是否已存在
+        const existing = db.exec(`SELECT id FROM gemstone_products WHERE asin = ?`, [product.asin])
+        
+        if (existing.length === 0 || existing[0].values.length === 0) {
+          // 插入新记录
+          db.run(`
+            INSERT INTO gemstone_products (
+              category_id, category_name_zh, category_name_en, keyword,
+              platform, title, price, currency, rating, reviews,
+              seller, seller_location, country, asin, url, image,
+              is_prime, is_best_seller, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            product.category_id || '',
+            product.category_name_zh || '',
+            product.category_name_en || '',
+            product.keyword || '',
+            product.platform || '',
+            product.title || '',
+            product.price || 0,
+            product.currency || 'USD',
+            product.rating || 0,
+            product.reviews || 0,
+            product.seller || '',
+            product.seller_location || '',
+            product.country || '',
+            product.asin,
+            product.url || '',
+            product.image || '',
+            product.is_prime ? 1 : 0,
+            product.is_best_seller ? 1 : 0,
+            product.timestamp || now
+          ])
+          insertedCount++
+        } else {
+          // 更新现有记录
+          db.run(`
+            UPDATE gemstone_products SET
+              category_id = ?, category_name_zh = ?, category_name_en = ?,
+              keyword = ?, platform = ?, title = ?, price = ?, currency = ?,
+              rating = ?, reviews = ?, seller = ?, seller_location = ?,
+              country = ?, url = ?, image = ?, is_prime = ?, is_best_seller = ?,
+              timestamp = ?
+            WHERE asin = ?
+          `, [
+            product.category_id || '',
+            product.category_name_zh || '',
+            product.category_name_en || '',
+            product.keyword || '',
+            product.platform || '',
+            product.title || '',
+            product.price || 0,
+            product.currency || 'USD',
+            product.rating || 0,
+            product.reviews || 0,
+            product.seller || '',
+            product.seller_location || '',
+            product.country || '',
+            product.url || '',
+            product.image || '',
+            product.is_prime ? 1 : 0,
+            product.is_best_seller ? 1 : 0,
+            product.timestamp || now,
+            product.asin
+          ])
+          updatedCount++
+        }
+      }
+    }
+    
+    // 保存数据库
+    saveDatabase()
+    
+    console.log(`✅ 数据导入完成: 新增 ${insertedCount} 条, 更新 ${updatedCount} 条`)
+    
+    res.json({
+      success: true,
+      message: '数据导入成功',
+      summary: {
+        report_timestamp: reportTimestamp,
+        total_products: data.summary.total_products,
+        unique_products: data.summary.unique_products,
+        inserted: insertedCount,
+        updated: updatedCount
+      }
+    })
+    
+  } catch (error) {
+    console.error('导入宝石数据失败:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 获取宝石数据报告列表
+app.get('/api/gemstone/reports', (req, res) => {
+  try {
+    const results = db.exec(`
+      SELECT id, report_timestamp, total_products, unique_products,
+             total_value, avg_price, avg_rating, categories_analyzed, created_at
+      FROM gemstone_reports
+      ORDER BY created_at DESC
+      LIMIT 50
+    `)
+    
+    const reports = results.length > 0 ? results[0].values.map(row => ({
+      id: row[0],
+      report_timestamp: row[1],
+      total_products: row[2],
+      unique_products: row[3],
+      total_value: row[4],
+      avg_price: row[5],
+      avg_rating: row[6],
+      categories_analyzed: row[7],
+      created_at: row[8]
+    })) : []
+    
+    res.json(reports)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 获取宝石产品数据
+app.get('/api/gemstone/products', (req, res) => {
+  try {
+    const { category, country, minPrice, maxPrice, minRating, limit = 100 } = req.query
+    
+    let sql = `SELECT * FROM gemstone_products WHERE 1=1`
+    const params = []
+    
+    if (category) {
+      sql += ` AND category_id = ?`
+      params.push(category)
+    }
+    
+    if (country) {
+      sql += ` AND country = ?`
+      params.push(country)
+    }
+    
+    if (minPrice) {
+      sql += ` AND price >= ?`
+      params.push(parseFloat(minPrice))
+    }
+    
+    if (maxPrice) {
+      sql += ` AND price <= ?`
+      params.push(parseFloat(maxPrice))
+    }
+    
+    if (minRating) {
+      sql += ` AND rating >= ?`
+      params.push(parseFloat(minRating))
+    }
+    
+    sql += ` ORDER BY timestamp DESC LIMIT ?`
+    params.push(parseInt(limit))
+    
+    const results = db.exec(sql, params)
+    
+    const products = results.length > 0 ? results[0].values.map(row => ({
+      id: row[0],
+      category_id: row[1],
+      category_name_zh: row[2],
+      category_name_en: row[3],
+      keyword: row[4],
+      platform: row[5],
+      title: row[6],
+      price: row[7],
+      currency: row[8],
+      rating: row[9],
+      reviews: row[10],
+      seller: row[11],
+      seller_location: row[12],
+      country: row[13],
+      asin: row[14],
+      url: row[15],
+      image: row[16],
+      is_prime: row[17],
+      is_best_seller: row[18],
+      timestamp: row[19],
+      created_at: row[20]
+    })) : []
+    
+    res.json(products)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 获取宝石产品数据（供前端数据源使用）
+app.get('/api/amazon-gemstones', (req, res) => {
+  if (!gemstoneDb) return res.status(500).json({ error: 'Gemstone database not ready' })
+  
+  const { month, category, limit = 100 } = req.query
+  
+  try {
+    let sql = `SELECT * FROM gemstone_products WHERE 1=1`
+    const params = []
+    
+    if (month) {
+      sql += ` AND timestamp LIKE ?`
+      params.push(`${month}%`)
+    }
+    
+    if (category) {
+      sql += ` AND category_id = ?`
+      params.push(category)
+    }
+    
+    sql += ` ORDER BY timestamp DESC LIMIT ?`
+    params.push(parseInt(limit))
+    
+    const results = gemstoneDb.exec(sql, params)
+    
+    const products = results.length > 0 ? results[0].values.map(row => ({
+      id: row[0],
+      category_id: row[1],
+      category_name_zh: row[2],
+      category_name_en: row[3],
+      keyword: row[4],
+      platform: row[5],
+      productName: row[6], // 统一字段名
+      title: row[6],
+      price: row[7],
+      currency: row[8],
+      rating: row[9],
+      reviews: row[10],
+      seller: row[11],
+      seller_location: row[12],
+      country: row[13],
+      asin: row[14],
+      url: row[15],
+      image: row[16],
+      imageUrl: row[16], // 统一字段名
+      is_prime: row[17],
+      is_best_seller: row[18],
+      timestamp: row[19],
+      website: row[5], // 平台作为网站
+      brand: row[11], // 卖家作为品牌
+      sales: row[10] // 评论数作为销量参考
+    })) : []
+    
+    res.json(products)
+  } catch (error) {
+    console.error('获取宝石产品失败:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 刷新宝石数据（抓取Amazon数据）
+app.post('/api/amazon-gemstones/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  
+  if (!gemstoneDb) {
+    return res.status(500).json({ 
+      success: false, 
+      error: '宝石数据库未初始化' 
+    })
+  }
+  
+  const RAINFOREST_API_KEY = getRainforestApiKey()
+  if (!RAINFOREST_API_KEY) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'RAINFOREST_API_KEY 未配置，请在 .env 文件中设置' 
+    })
+  }
+  
+  console.log(`\n🔄 开始刷新宝石数据 (${month})`)
+  
+  const allProducts = []
+  const categories = Object.keys(GEMSTONE_CATEGORIES)
+  
+  try {
+    for (const categoryId of categories) {
+      const category = GEMSTONE_CATEGORIES[categoryId]
+      const keywords = GEMSTONE_KEYWORDS[categoryId]
+      
+      console.log(`\n${category.icon} ${category.name_zh}`)
+      
+      const keywordList = []
+      if (keywords && keywords.english) {
+        keywordList.push(...keywords.english.map(k => ({ keyword: k, lang: 'en' })))
+      }
+      if (keywords && keywords.chinese) {
+        keywordList.push(...keywords.chinese.map(k => ({ keyword: k, lang: 'zh' })))
+      }
+      
+      // 只抓取第一页，快速获取数据
+      for (const { keyword } of keywordList.slice(0, 3)) { // 限制关键词数量
+        const products = await fetchGemstoneFromAmazon(keyword, 'amazon.com', 1)
+        
+        products.forEach(p => {
+          p.category_id = categoryId
+          p.category_name_zh = category.name_zh
+          p.category_name_en = category.name_en
+        })
+        
+        allProducts.push(...products)
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+    
+    // 保存到独立的宝石数据库
+    let insertedCount = 0
+    const now = new Date().toISOString()
+    
+    for (const product of allProducts) {
+      if (!product.asin) continue
+      
+      const existing = gemstoneDb.exec(`SELECT id FROM gemstone_products WHERE asin = ?`, [product.asin])
+      
+      if (existing.length === 0 || existing[0].values.length === 0) {
+        gemstoneDb.run(`
+          INSERT INTO gemstone_products (
+            category_id, category_name_zh, category_name_en, keyword,
+            platform, title, price, currency, rating, reviews,
+            seller, seller_location, country, asin, url, image,
+            is_prime, is_best_seller, timestamp
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          product.category_id || '',
+          product.category_name_zh || '',
+          product.category_name_en || '',
+          product.keyword || '',
+          product.platform || '',
+          product.title || '',
+          product.price || 0,
+          product.currency || 'USD',
+          product.rating || 0,
+          product.reviews || 0,
+          product.seller || '',
+          product.seller_location || '',
+          product.country || '',
+          product.asin,
+          product.url || '',
+          product.image || '',
+          product.is_prime ? 1 : 0,
+          product.is_best_seller ? 1 : 0,
+          now
+        ])
+        insertedCount++
+      }
+    }
+    
+    // 更新分类汇总
+    for (const categoryId of categories) {
+      const count = gemstoneDb.exec(`SELECT COUNT(*) FROM gemstone_products WHERE category_id = ?`, [categoryId])[0]?.values[0][0] || 0
+      const category = GEMSTONE_CATEGORIES[categoryId]
+      
+      gemstoneDb.run(`
+        INSERT OR REPLACE INTO gemstone_categories (category_id, category_name_zh, category_name_en, total_products, last_updated)
+        VALUES (?, ?, ?, ?, ?)
+      `, [categoryId, category.name_zh, category.name_en, count, now])
+    }
+    
+    // 记录刷新历史
+    gemstoneDb.run(`
+      INSERT INTO gemstone_refresh_history (refresh_date, month, total_products, categories_count, status)
+      VALUES (?, ?, ?, ?, ?)
+    `, [now, month, allProducts.length, categories.length, 'success'])
+    
+    saveGemstoneDatabase()
+    
+    console.log(`✅ 宝石数据刷新完成: ${insertedCount} 条新数据`)
+    
+    res.json({
+      success: true,
+      count: insertedCount,
+      total: allProducts.length,
+      items: allProducts.slice(0, 5)
+    })
+    
+  } catch (error) {
+    console.error('刷新宝石数据失败:', error)
+    
+    // 记录失败历史
+    gemstoneDb.run(`
+      INSERT INTO gemstone_refresh_history (refresh_date, month, total_products, categories_count, status)
+      VALUES (?, ?, ?, ?, ?)
+    `, [new Date().toISOString(), month, 0, 0, 'failed'])
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    })
+  }
+})
+
+// 获取宝石数据可用月份
+app.get('/api/amazon-gemstones/months', (req, res) => {
+  if (!gemstoneDb) return res.status(500).json({ error: 'Gemstone database not ready' })
+  
+  try {
+    const results = gemstoneDb.exec(`
+      SELECT DISTINCT substr(timestamp, 1, 7) as month 
+      FROM gemstone_products 
+      WHERE timestamp IS NOT NULL 
+      ORDER BY month DESC
+    `)
+    
+    const months = results.length > 0 ? results[0].values.map(row => row[0]) : []
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+// 获取宝石分类汇总
+app.get('/api/amazon-gemstones/categories', (req, res) => {
+  if (!gemstoneDb) return res.status(500).json({ error: 'Gemstone database not ready' })
+  
+  try {
+    const results = gemstoneDb.exec(`SELECT * FROM gemstone_categories ORDER BY category_id`)
+    const categories = results.length > 0 ? results[0].values.map(row => ({
+      category_id: row[1],
+      category_name_zh: row[2],
+      category_name_en: row[3],
+      total_products: row[4],
+      last_updated: row[5]
+    })) : []
+    res.json(categories)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+// 获取刷新历史
+app.get('/api/amazon-gemstones/history', (req, res) => {
+  if (!gemstoneDb) return res.status(500).json({ error: 'Gemstone database not ready' })
+  
+  try {
+    const results = gemstoneDb.exec(`SELECT * FROM gemstone_refresh_history ORDER BY id DESC LIMIT 20`)
+    const history = results.length > 0 ? results[0].values.map(row => ({
+      id: row[0],
+      refresh_date: row[1],
+      month: row[2],
+      total_products: row[3],
+      categories_count: row[4],
+      status: row[5],
+      created_at: row[6]
+    })) : []
+    res.json(history)
+  } catch (error) {
+    res.json([])
+  }
+})
+
 console.log('宝石 API 路由已注册')
 
 console.log('=== Calling ensureDbDir ===')
 ensureDbDir()
 console.log('=== ensureDbDir done, now initDatabase ===')
 initDatabase().then(() => {
-  console.log('=== initDatabase RESOLVED ===')
+  console.log('=== initDatabase RESOLVED, now initGemstoneDatabase ===')
+  return initGemstoneDatabase()
+}).then(() => {
+  console.log('=== initGemstoneDatabase RESOLVED ===')
   cron.schedule('0 8 * * *', async () => {
     console.log('\n=== 开始定时爬取任务 ===')
     const now = new Date()
@@ -2164,7 +2884,9 @@ initDatabase().then(() => {
   
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
-    console.log(`Database: SQLite (sql.js)`)
-    console.log(`Data file: ${dbPath}`)
+    console.log(`Main Database: SQLite (sql.js)`)
+    console.log(`Main DB file: ${dbPath}`)
+    console.log(`Gemstone Database: SQLite (sql.js)`)
+    console.log(`Gemstone DB file: ${gemstoneDbPath}`)
   })
 })

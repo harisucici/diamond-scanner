@@ -31,6 +31,18 @@
         <button :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">📈</button>
       </div>
 
+      <div class="source-menu-wrap">
+        <button class="source-menu-btn" @click="showSourceMenu = !showSourceMenu">
+          📡 数据源 <span class="source-count">{{ enabledSources.length }}</span>
+        </button>
+        <div v-if="showSourceMenu" class="source-dropdown">
+          <label v-for="source in allSources" :key="source.id" class="source-item">
+            <input type="checkbox" :checked="source.enabled" @change="toggleSource(source.id)" />
+            <span>{{ source.icon }} {{ source.name }}</span>
+          </label>
+        </div>
+      </div>
+
       <button class="refresh-btn" @click="refreshMonth" :disabled="refreshing">
         {{ refreshing ? '...' : '🔄' }}
       </button>
@@ -198,12 +210,13 @@ export default {
     const stats = ref(null)
     const availableMonths = ref([])
     const categories = ref([])
+    const showSourceMenu = ref(false)
+    const sourceStatus = ref([])
 
-    // 数据源配置 (包含BUYMA、Fashionphile和Amazon宝石)
+    // 数据源配置 (默认只启用BUYMA和Fashionphile)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
-      { id: 'amazon_gemstones', name: 'Amazon宝石', icon: '💠', enabled: true, api: '/api/amazon-gemstones' }
+      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' }
     ])
 
     // 启用的数据源
@@ -212,8 +225,8 @@ export default {
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
       return Math.max(...data.value.map(item => {
-        // Fashionphile 和 Amazon宝石 用 price，其他用 sales
-        if (item._source === 'Fashionphile' || item._source === 'Amazon宝石') {
+        // Fashionphile 用 price，其他用 sales
+        if (item._source === 'Fashionphile') {
           return item.price || 0
         }
         return item.sales || 0
@@ -268,6 +281,22 @@ export default {
       }
     }
 
+    // 加载数据源状态
+    const loadSourceStatus = async () => {
+      try {
+        const response = await fetch('/api/sources/status')
+        sourceStatus.value = await response.json()
+      } catch (error) {
+        console.error('加载数据源状态失败:', error)
+      }
+    }
+
+    // 获取数据源图标
+    const getSourceIcon = (id) => {
+      const source = allSources.value.find(s => s.id === id)
+      return source?.icon || '📦'
+    }
+
     const loadData = async () => {
       loading.value = true
       try {
@@ -292,8 +321,8 @@ export default {
               // Fashionphile 使用当前月份
               const currentMonth = new Date().toISOString().slice(0, 7)
               url = `${source.api}?month=${currentMonth}`
-            } else if (source.id === 'amazon_gemstones') {
-              // Amazon宝石使用当前月份
+            } else if (source.id === 'etsy') {
+              // Etsy 使用当前月份
               const currentMonth = new Date().toISOString().slice(0, 7)
               url = `${source.api}?month=${currentMonth}`
             }
@@ -313,16 +342,17 @@ export default {
                 normalizedItem.currency = item.currency || 'USD'
                 normalizedItem.url = item.url
                 normalizedItem.image = item.imageUrl
-              } else if (source.id === 'amazon_gemstones') {
-                // Amazon宝石数据已经在API层面统一了字段
-                normalizedItem.productName = item.productName || item.title
-                normalizedItem.brand = item.brand || item.seller
+              }
+              
+              // Etsy 数据格式
+              if (source.id === 'etsy') {
+                normalizedItem.productName = item.productName
+                normalizedItem.brand = item.brand
                 normalizedItem.price = item.price
                 normalizedItem.currency = item.currency || 'USD'
+                normalizedItem.sales = item.sales || 0
                 normalizedItem.url = item.url
-                normalizedItem.image = item.image || item.imageUrl
-                normalizedItem.rating = item.rating
-                normalizedItem.reviews = item.reviews
+                normalizedItem.image = item.imageUrl
               }
               
               allData.push(normalizedItem)
@@ -336,9 +366,9 @@ export default {
         
         // 计算统计信息
         const totalRecords = allData.length
-        // BUYMA 用 sales，Fashionphile 和 Amazon宝石 用 price
+        // BUYMA 用 sales，Fashionphile 用 price
         const totalSales = allData.reduce((sum, item) => {
-          if (item._source === 'Fashionphile' || item._source === 'Amazon宝石') {
+          if (item._source === 'Fashionphile') {
             return sum + (item.price || 0)
           }
           return sum + (item.sales || 0)
@@ -378,13 +408,13 @@ export default {
         console.error('加载Fashionphile月份失败:', error)
       }
       
-      // 尝试获取 Amazon宝石 月份
+      // 尝试获取 Etsy 月份
       try {
-        const response = await fetch('/api/amazon-gemstones/months')
+        const response = await fetch('/api/etsy/months')
         const months = await response.json()
         months.forEach(m => allMonths.add(m))
       } catch (error) {
-        console.error('加载Amazon宝石月份失败:', error)
+        console.error('加载Etsy月份失败:', error)
       }
       
       availableMonths.value = Array.from(allMonths).sort().reverse()
@@ -403,7 +433,7 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
-      // 确定刷新用的月份
+      // 确定刷新用的月份 (Fashionphile 和 Etsy 总是用当前月份)
       const currentMonth = new Date().toISOString().slice(0, 7)
       
       try {
@@ -411,22 +441,10 @@ export default {
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            // 不同数据源使用不同月份策略
-            let refreshMonthValue = selectedMonth.value
-            let refreshUrl = ''
+            // Fashionphile 和 Etsy 使用当前月份，其他数据源使用选中的月份
+            const refreshMonthValue = (source.id === 'fashionphile' || source.id === 'etsy') ? currentMonth : selectedMonth.value
             
-            if (source.id === 'buyma') {
-              refreshMonthValue = selectedMonth.value
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'fashionphile') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'amazon_gemstones') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            }
-            
-            const response = await fetch(refreshUrl, {
+            const response = await fetch(`${source.api}/refresh/${refreshMonthValue}`, {
               method: 'POST'
             })
             const result = await response.json()
@@ -471,13 +489,6 @@ export default {
       }
     }
 
-    // 打开商品链接
-    const openItemUrl = (url) => {
-      if (url) {
-        window.open(url, '_blank')
-      }
-    }
-
     // 切换数据源
     const toggleSource = (sourceId) => {
       const source = allSources.value.find(s => s.id === sourceId)
@@ -487,10 +498,17 @@ export default {
       }
     }
 
+    // 打开商品链接
+    const openItemUrl = (url) => {
+      if (url) {
+        window.open(url, '_blank')
+      }
+    }
+
     return {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
       availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory, loadData, refreshMonth, openItemUrl,
-      allSources, enabledSources, toggleSource,
+      allSources, enabledSources, toggleSource, showSourceMenu, sourceStatus, loadSourceStatus, getSourceIcon,
       showDebug, debugLogs
     }
   }
@@ -518,6 +536,15 @@ export default {
 .view-toggle button:hover { color: #fff; }
 .view-toggle button.active { background: linear-gradient(135deg, #00d4ff, #667eea); color: white; font-weight: 600; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
 
+.source-menu-wrap { position: relative; }
+.source-menu-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: rgba(102, 126, 234, 0.2); border: 1px solid rgba(102, 126, 234, 0.4); color: #fff; border-radius: 16px; cursor: pointer; font-size: 0.85rem; transition: all 0.3s; }
+.source-menu-btn:hover { background: rgba(102, 126, 234, 0.3); }
+.source-count { background: #00d4ff; color: #000; padding: 2px 6px; border-radius: 10px; font-size: 0.75rem; font-weight: bold; }
+.source-dropdown { position: absolute; top: 100%; right: 0; margin-top: 8px; background: rgba(15, 12, 41, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(102, 126, 234, 0.3); border-radius: 12px; padding: 10px; z-index: 9999; min-width: 160px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+.source-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+.source-item:hover { background: rgba(102, 126, 234, 0.2); }
+.source-item input { accent-color: #667eea; width: 16px; height: 16px; }
+.source-item span { color: rgba(255, 255, 255, 0.9); font-size: 0.85rem; }
 .stats-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
 .stat-card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); padding: 20px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s ease; }
 .stat-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
@@ -556,6 +583,11 @@ export default {
 .product-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; position: relative; overflow: hidden; transition: all 0.3s ease; }
 .product-card:hover { transform: translateY(-6px); box-shadow: 0 16px 40px rgba(0,0,0,0.4); border-color: rgba(0,212,255,0.3); }
 .product-card.rank-1 { border-color: rgba(255,215,0,0.4); box-shadow: 0 0 25px rgba(255,215,0,0.15); }.product-card.rank-2 { border-color: rgba(192,192,192,0.4); }.product-card.rank-3 { border-color: rgba(205,127,50,0.4); }
+
+.card-rank { position: absolute; top: 10px; left: 10px; width: 32px; height: 32px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.product-card.rank-1 .card-rank { background: linear-gradient(135deg, #ffd700, #ffb700); color: #1a1a2e; }
+.product-card.rank-2 .card-rank { background: linear-gradient(135deg, #c0c0c0, #a8a8a8); color: #1a1a2e; }
+.product-card.rank-3 .card-rank { background: linear-gradient(135deg, #cd7f32, #b87333); color: #fff; }
 
 .card-image-wrap { position: relative; overflow: hidden; }
 .card-image { width: 100%; height: 160px; object-fit: cover; transition: transform 0.3s ease; }
