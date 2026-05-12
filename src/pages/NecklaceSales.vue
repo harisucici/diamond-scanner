@@ -213,11 +213,10 @@ export default {
     const showSourceMenu = ref(false)
     const sourceStatus = ref([])
 
-    // 数据源配置 (默认只启用BUYMA、Fashionphile和Etsy)
+    // 数据源配置 (默认只启用BUYMA和Fashionphile)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
-      { id: 'etsy', name: 'Etsy', icon: '🎨', enabled: true, api: '/api/etsy' }
+      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' }
     ])
 
     // 启用的数据源
@@ -322,10 +321,6 @@ export default {
               // Fashionphile 使用当前月份
               const currentMonth = new Date().toISOString().slice(0, 7)
               url = `${source.api}?month=${currentMonth}`
-            } else if (source.id === 'etsy') {
-              // Etsy 使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
             }
             
             const response = await fetch(url)
@@ -341,17 +336,6 @@ export default {
                 normalizedItem.brand = item.brand
                 normalizedItem.price = item.price
                 normalizedItem.currency = item.currency || 'USD'
-                normalizedItem.url = item.url
-                normalizedItem.image = item.imageUrl
-              }
-              
-              // Etsy 数据格式
-              if (source.id === 'etsy') {
-                normalizedItem.productName = item.productName
-                normalizedItem.brand = item.brand
-                normalizedItem.price = item.price
-                normalizedItem.currency = item.currency || 'USD'
-                normalizedItem.sales = item.sales || 0
                 normalizedItem.url = item.url
                 normalizedItem.image = item.imageUrl
               }
@@ -409,15 +393,6 @@ export default {
         console.error('加载Fashionphile月份失败:', error)
       }
       
-      // 尝试获取 Etsy 月份
-      try {
-        const response = await fetch('/api/etsy/months')
-        const months = await response.json()
-        months.forEach(m => allMonths.add(m))
-      } catch (error) {
-        console.error('加载Etsy月份失败:', error)
-      }
-      
       availableMonths.value = Array.from(allMonths).sort().reverse()
       
       // 默认选中最新月份
@@ -434,7 +409,7 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
-      // 确定刷新用的月份 (Fashionphile 和 Etsy 总是用当前月份)
+      // 确定刷新用的月份 (Fashionphile 总是用当前月份)
       const currentMonth = new Date().toISOString().slice(0, 7)
       
       try {
@@ -442,8 +417,8 @@ export default {
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            // Fashionphile 和 Etsy 使用当前月份，其他数据源使用选中的月份
-            const refreshMonthValue = (source.id === 'fashionphile' || source.id === 'etsy') ? currentMonth : selectedMonth.value
+            // Fashionphile 使用当前月份，其他数据源使用选中的月份
+            const refreshMonthValue = source.id === 'fashionphile' ? currentMonth : selectedMonth.value
             
             const response = await fetch(`${source.api}/refresh/${refreshMonthValue}`, {
               method: 'POST'
@@ -584,11 +559,6 @@ export default {
 .product-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; position: relative; overflow: hidden; transition: all 0.3s ease; }
 .product-card:hover { transform: translateY(-6px); box-shadow: 0 16px 40px rgba(0,0,0,0.4); border-color: rgba(0,212,255,0.3); }
 .product-card.rank-1 { border-color: rgba(255,215,0,0.4); box-shadow: 0 0 25px rgba(255,215,0,0.15); }.product-card.rank-2 { border-color: rgba(192,192,192,0.4); }.product-card.rank-3 { border-color: rgba(205,127,50,0.4); }
-
-.card-rank { position: absolute; top: 10px; left: 10px; width: 32px; height: 32px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-.product-card.rank-1 .card-rank { background: linear-gradient(135deg, #ffd700, #ffb700); color: #1a1a2e; }
-.product-card.rank-2 .card-rank { background: linear-gradient(135deg, #c0c0c0, #a8a8a8); color: #1a1a2e; }
-.product-card.rank-3 .card-rank { background: linear-gradient(135deg, #cd7f32, #b87333); color: #fff; }
 
 .card-image-wrap { position: relative; overflow: hidden; }
 .card-image { width: 100%; height: 160px; object-fit: cover; transition: transform 0.3s ease; }

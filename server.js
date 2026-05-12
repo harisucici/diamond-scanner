@@ -13,15 +13,20 @@ import yaml from 'js-yaml'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+console.log('=== SERVER STARTING ===')
+console.log('Node version:', process.version)
+console.log('CWD:', process.cwd())
+
 const chatPromptConfig = yaml.load(fs.readFileSync(join(__dirname, 'config/chat-prompt.yaml'), 'utf-8'))
+console.log('Chat prompt config loaded')
 const SYSTEM_PROMPT = chatPromptConfig.systemPrompt
 
 const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || ''
 
-const getProxyAgent = () => {
+const getProxyAgent = async () => {
   if (!PROXY_URL) return undefined
   try {
-    const { HttpsProxyAgent } = require('https-proxy-agent')
+    const { HttpsProxyAgent } = await import('https-proxy-agent')
     return new HttpsProxyAgent(PROXY_URL)
   } catch (e) {
     return undefined
@@ -174,22 +179,6 @@ const initDatabase = async () => {
         price REAL,
         currency TEXT,
         condition TEXT,
-        imageUrl TEXT,
-        url TEXT,
-        created_at TEXT
-      )
-    `)
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS etsy_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        productName TEXT,
-        brand TEXT,
-        price REAL,
-        currency TEXT,
-        sales INTEGER,
         imageUrl TEXT,
         url TEXT,
         created_at TEXT
@@ -997,98 +986,6 @@ const fetchFashionphileData = async (category = 'jewelry') => {
   }
 }
 
-const ETSY_API_KEY = 'wfr6h9dziu0sm1jp27b0rf7i:ftwnatmo2c'
-
-const fetchEtsyData = async (keywords = 'jewelry') => {
-  try {
-    const items = []
-    let rank = 1
-    
-    const keywordList = ['necklace', 'bracelet', 'ring', 'earring']
-    
-    for (const kw of keywordList) {
-      try {
-        const url = `https://api.etsy.com/v3/application/openapi-ping`
-        const response = await fetch(url, {
-          headers: {
-            'x-api-key': ETSY_API_KEY,
-            'Accept': 'application/json'
-          }
-        })
-        
-        if (!response.ok) {
-          console.log(`Etsy API ${kw}: HTTP ${response.status}`)
-          continue
-        }
-        
-        const data = await response.json()
-        const listings = data.results || []
-        
-        listings.forEach(item => {
-          if (items.find(i => i.productName === item.title)) return
-          if (items.length >= 50) return
-          
-          const brand = item.Shop?.shop_name || 'Etsy Seller'
-          
-          let categoryName = ''
-          if (kw === 'necklace') categoryName = '项链'
-          else if (kw === 'bracelet') categoryName = '手链'
-          else if (kw === 'ring') categoryName = '戒指'
-          else if (kw === 'earring') categoryName = '耳钉'
-          
-          items.push({
-            rank: rank++,
-            productName: item.title || '',
-            brand: brand,
-            price: item.price?.amount ? item.price.amount / 100 : 0,
-            currency: item.price?.currency_code || 'USD',
-            sales: item.listing_id ? Math.floor(Math.random() * 500) + 10 : 0,
-            imageUrl: item.images?.[0]?.url_570xN || '',
-            url: item.url || `https://www.etsy.com/listing/${item.listing_id}`,
-            productType: categoryName
-          })
-        })
-      } catch (e) {
-        console.log(`获取 Etsy ${kw} 失败:`, e.message)
-      }
-    }
-    
-    if (items.length === 0) {
-      console.log('Etsy: 使用模拟数据')
-      const mockBrands = ['VintageTreasures', 'ArtisanJewelry', 'SilverMoon', 'GoldCraft', 'GemstoneQueen', 'HandmadeHearts', 'LuxePearl', 'BohoChic']
-      const mockProducts = [
-        { name: '14K Gold Pendant Necklace', type: '项链' },
-        { name: 'Sterling Silver Bracelet', type: '手链' },
-        { name: 'Diamond Engagement Ring', type: '戒指' },
-        { name: 'Pearl Earrings studs', type: '耳钉' },
-        { name: 'Gold Chain Link Necklace', type: '项链' },
-        { name: 'Beaded Bracelet Boho', type: '手链' },
-        { name: 'Silver Signet Ring', type: '戒指' },
-        { name: 'Crystal Drop Earrings', type: '耳钉' },
-      ]
-      
-      mockProducts.forEach((p, i) => {
-        items.push({
-          rank: i + 1,
-          productName: `${mockBrands[i % mockBrands.length]} ${p.name}`,
-          brand: mockBrands[i % mockBrands.length],
-          price: Math.floor(Math.random() * 300) + 20,
-          currency: 'USD',
-          sales: Math.floor(Math.random() * 200) + 5,
-          imageUrl: '',
-          url: 'https://www.etsy.com',
-          productType: p.type
-        })
-      })
-    }
-    
-    console.log(`Etsy: 获取${items.length}条${keywords}数据`)
-    return { items, source: items.length > 0 && items[0].imageUrl ? 'etsy-api' : 'mock' }
-  } catch (error) {
-    console.error('Etsy爬取失败:', error.message)
-    return { items: [], source: 'error', error: error.message }
-  }
-}
 
 const dbQuery = (sql, params = []) => {
   const stmt = db.prepare(sql)
@@ -1164,7 +1061,7 @@ const createGenericRoutes = (basePath, tableName, fetchFunction, extraFields = {
     try {
       let items
       if (fetchFunction === fetchYahooAuctionData || fetchFunction === fetchInstagramData || 
-          fetchFunction === fetchSaksData || fetchFunction === fetchFashionphileData || fetchFunction === fetchEtsyData) {
+          fetchFunction === fetchSaksData || fetchFunction === fetchFashionphileData) {
         const result = await fetchFunction(keyword || category || 'accessories')
         items = result.items || result
       } else {
@@ -1670,85 +1567,6 @@ app.post('/api/fashionphile/refresh/:month', async (req, res) => {
   }
 })
 
-app.get('/api/etsy', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const { month, brand, limit } = req.query
-  const tableMonth = month || new Date().toISOString().slice(0, 7)
-  
-  try {
-    let sql = 'SELECT * FROM etsy_products WHERE month = ?'
-    const params = [tableMonth]
-    
-    if (brand) {
-      sql += ' AND brand = ?'
-      params.push(brand)
-    }
-    
-    sql += ' ORDER BY rank ASC'
-    
-    if (limit) {
-      sql += ' LIMIT ?'
-      params.push(parseInt(limit))
-    }
-    
-    const results = dbQuery(sql, params)
-    res.json(results)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
-
-app.get('/api/etsy/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  try {
-    const result = db.exec('SELECT DISTINCT month FROM etsy_products ORDER BY month DESC')
-    const months = result[0]?.values?.map(v => v[0]) || []
-    res.json(months)
-  } catch (error) {
-    res.json([])
-  }
-})
-
-app.get('/api/etsy/brands', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  try {
-    const result = db.exec('SELECT DISTINCT brand FROM etsy_products ORDER BY brand')
-    const brands = result[0]?.values?.map(v => v[0]) || []
-    res.json(brands)
-  } catch (error) {
-    res.json([])
-  }
-})
-
-app.post('/api/etsy/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const { month } = req.params
-  
-  try {
-    dbExec('DELETE FROM etsy_products WHERE month = ?', [month])
-    
-    const result = await fetchEtsyData()
-    const now = new Date().toISOString()
-    
-    result.items.forEach(item => {
-      dbExec(
-        'INSERT INTO etsy_products (rank, month, productName, brand, price, currency, sales, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.sales, item.imageUrl, item.url, now]
-      )
-    })
-    
-    saveDatabase()
-    res.json({ 
-      success: true, 
-      count: result.items.length, 
-      month, 
-      platform: 'Etsy',
-      items: result.items.slice(0, 5)
-    })
-  } catch (error) {
-    res.status(500).json({ error: error.message })
-  }
-})
 
 const callChatAPI = async (provider, messages) => {
   const configs = {
@@ -1862,7 +1680,6 @@ const searchAllProducts = (keyword, limit = 10) => {
     const tables = [
       { name: 'necklaces', source: 'necklaces', priceField: 'priceRange' },
       { name: 'fashionphile_products', source: 'fashionphile', priceField: 'price', currency: true },
-      { name: 'etsy_products', source: 'etsy', priceField: 'price', currency: true },
       { name: 'saks_products', source: 'saks', priceField: 'price', currency: true },
       { name: 'mercari_products', source: 'mercari', priceField: 'price' },
       { name: 'rakuten_products', source: 'rakuten', priceField: 'price' }
@@ -2030,8 +1847,289 @@ app.post('/api/chat/glm', handleGLMChat)
 app.post('/api/chat/groq', handleGroqChat)
 app.post('/api/chat', handleChatWithProducts)
 
+// ========== 宝石数据获取 API ==========
+// 宝石品类配置
+const GEMSTONE_CATEGORIES = {
+  lab_diamond: { name_zh: '培育钻石', name_en: 'Lab-Grown Diamond', icon: '💎', color: '#b9f2ff' },
+  lab_emerald: { name_zh: '培育祖母绿', name_en: 'Lab-Grown Emerald', icon: '💚', color: '#50c878' },
+  lab_ruby: { name_zh: '培育红宝石', name_en: 'Lab-Grown Ruby', icon: '❤️', color: '#e0115f' },
+  lab_sapphire: { name_zh: '培育蓝宝石', name_en: 'Lab-Grown Sapphire', icon: '💙', color: '#0f52ba' },
+  saltwater_pearl: { name_zh: '海水珍珠', name_en: 'Saltwater Pearl', icon: '🤍', color: '#fdeef4' },
+  freshwater_pearl: { name_zh: '淡水珍珠', name_en: 'Freshwater Pearl', icon: '🦪', color: '#fffaf0' }
+}
+
+// 宝石关键词配置
+const GEMSTONE_KEYWORDS = {
+  lab_diamond: {
+    english: ['lab grown diamond', 'lab created diamond', 'synthetic diamond', 'cultured diamond', 'cvd diamond', 'hpht diamond'],
+    chinese: ['培育钻石', '合成钻石', '人造钻石', '实验室钻石', 'CVD钻石', 'HPHT钻石']
+  },
+  lab_emerald: {
+    english: ['lab grown emerald', 'cultured emerald', 'synthetic emerald', 'created emerald'],
+    chinese: ['培育祖母绿', '合成祖母绿', '人造祖母绿', '实验室祖母绿']
+  },
+  lab_ruby: {
+    english: ['lab grown ruby', 'synthetic ruby', 'cultured ruby', 'created ruby'],
+    chinese: ['培育红宝石', '合成红宝石', '人造红宝石', '实验室红宝石']
+  },
+  lab_sapphire: {
+    english: ['lab grown sapphire', 'synthetic sapphire', 'cultured sapphire', 'created sapphire'],
+    chinese: ['培育蓝宝石', '合成蓝宝石', '人造蓝宝石', '实验室蓝宝石']
+  },
+  saltwater_pearl: {
+    english: ['saltwater pearl', 'akoya pearl', 'south sea pearl', 'tahitian pearl'],
+    chinese: ['海水珍珠', 'Akoya珍珠', '南洋珍珠', '大溪地珍珠', '海水珠']
+  },
+  freshwater_pearl: {
+    english: ['freshwater pearl', 'cultured freshwater pearl', 'river pearl'],
+    chinese: ['淡水珍珠', '淡水珠', '养殖珍珠']
+  }
+}
+
+// Rainforest API 配置
+const RAINFOREST_API_KEY = process.env.RAINFOREST_API_KEY || ''
+const RAINFOREST_BASE_URL = 'https://api.rainforestapi.com/request'
+
+// 使用 Rainforest API 获取 Amazon 数据
+const fetchGemstoneFromAmazon = async (keyword, domain = 'amazon.com', pages = 1) => {
+  if (!RAINFOREST_API_KEY) {
+    console.log('⚠️ RAINFOREST_API_KEY 未配置，跳过 Amazon 数据获取')
+    return []
+  }
+  
+  const items = []
+  
+  try {
+    for (let page = 1; page <= pages; page++) {
+      const params = new URLSearchParams({
+        api_key: RAINFOREST_API_KEY,
+        type: 'search',
+        amazon_domain: domain,
+        search_term: keyword,
+        page: page.toString(),
+        output: 'json'
+      })
+      
+      const url = `${RAINFOREST_BASE_URL}?${params.toString()}`
+      console.log(`🔍 [Rainforest] 搜索: ${keyword} (page ${page})`)
+      
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.error('❌ Rainforest API 认证失败，请检查 API Key')
+        } else {
+          console.error(`❌ Rainforest API 错误: ${response.status}`)
+        }
+        continue
+      }
+      
+      const data = await response.json()
+      const searchResults = data.search_results || []
+      
+      for (const item of searchResults) {
+        items.push({
+          platform: domain.includes('.jp') ? 'Amazon Japan' : 'Amazon',
+          title: item.title || '',
+          price: item.price?.value || 0,
+          currency: item.price?.currency || 'USD',
+          rating: item.rating || 0,
+          reviews: item.ratings_total || 0,
+          seller: item.seller?.name || 'Unknown',
+          country: domain.includes('.jp') ? 'Japan' : 'United States',
+          asin: item.asin || '',
+          url: item.link || `https://www.${domain}/dp/${item.asin}`,
+          image: item.image || '',
+          is_prime: item.is_prime || false,
+          is_best_seller: item.is_best_seller || false,
+          keyword: keyword
+        })
+      }
+      
+      console.log(`   ✅ 获取 ${searchResults.length} 个产品`)
+      
+      if (page < pages) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+  } catch (error) {
+    console.error('❌ Amazon 数据获取失败:', error.message)
+  }
+  
+  return items
+}
+
+// 获取单个品类的 Amazon 数据
+app.post('/api/gemstone/fetch/:categoryId', async (req, res) => {
+  const { categoryId } = req.params
+  const { domains = ['amazon.com'], pagesPerKeyword = 1, useEnglish = true, useChinese = true } = req.body
+  
+  if (!GEMSTONE_CATEGORIES[categoryId]) {
+    return res.status(400).json({ error: `未知的品类ID: ${categoryId}` })
+  }
+  
+  if (!RAINFOREST_API_KEY) {
+    return res.status(400).json({ error: 'RAINFOREST_API_KEY 未配置' })
+  }
+  
+  const category = GEMSTONE_CATEGORIES[categoryId]
+  const keywords = GEMSTONE_KEYWORDS[categoryId]
+  
+  console.log(`\n${'='.repeat(60)}`)
+  console.log(`${category.icon} ${category.name_zh} / ${category.name_en}`)
+  console.log(`${'='.repeat(60)}`)
+  
+  const allProducts = []
+  const keywordList = []
+  
+  if (useEnglish && keywords.english) {
+    keywordList.push(...keywords.english.map(k => ({ keyword: k, lang: 'en' })))
+  }
+  if (useChinese && keywords.chinese) {
+    keywordList.push(...keywords.chinese.map(k => ({ keyword: k, lang: 'zh' })))
+  }
+  
+  try {
+    for (const domain of domains) {
+      for (const { keyword, lang } of keywordList) {
+        if (lang === 'zh' && !domain.includes('.com')) continue
+        
+        const products = await fetchGemstoneFromAmazon(keyword, domain, pagesPerKeyword)
+        allProducts.push(...products)
+        
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+    
+    // 数据分析
+    const uniqueProducts = []
+    const seenAsins = new Set()
+    
+    for (const product of allProducts) {
+      if (product.asin && !seenAsins.has(product.asin)) {
+        seenAsins.add(product.asin)
+        uniqueProducts.push(product)
+      }
+    }
+    
+    const prices = uniqueProducts.filter(p => p.price > 0).map(p => p.price)
+    const avgPrice = prices.length > 0 ? prices.reduce((sum, p) => sum + p, 0) / prices.length : 0
+    
+    const ratings = uniqueProducts.filter(p => p.rating > 0).map(p => p.rating)
+    const avgRating = ratings.length > 0 ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length : 0
+    
+    const topProducts = uniqueProducts
+      .filter(p => p.rating > 0)
+      .sort((a, b) => b.rating - a.rating || b.reviews - a.reviews)
+      .slice(0, 20)
+    
+    const result = {
+      category: categoryId,
+      category_name_zh: category.name_zh,
+      category_name_en: category.name_en,
+      timestamp: new Date().toISOString(),
+      total_products: allProducts.length,
+      unique_products: uniqueProducts.length,
+      avg_price: Math.round(avgPrice * 100) / 100,
+      avg_rating: Math.round(avgRating * 10) / 10,
+      top_products: topProducts,
+      all_products: uniqueProducts
+    }
+    
+    res.json(result)
+  } catch (error) {
+    console.error('获取品类数据失败:', error.message)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// 批量获取所有品类数据
+app.post('/api/gemstone/fetch-all', async (req, res) => {
+  const options = req.body
+  
+  if (!RAINFOREST_API_KEY) {
+    return res.status(400).json({ error: 'RAINFOREST_API_KEY 未配置' })
+  }
+  
+  const results = {}
+  const categories = Object.keys(GEMSTONE_CATEGORIES)
+  
+  for (const categoryId of categories) {
+    try {
+      const category = GEMSTONE_CATEGORIES[categoryId]
+      const keywords = GEMSTONE_KEYWORDS[categoryId]
+      
+      console.log(`\n${category.icon} ${category.name_zh}`)
+      
+      const allProducts = []
+      const keywordList = []
+      
+      if (options.useEnglish !== false && keywords.english) {
+        keywordList.push(...keywords.english.map(k => ({ keyword: k, lang: 'en' })))
+      }
+      if (options.useChinese !== false && keywords.chinese) {
+        keywordList.push(...keywords.chinese.map(k => ({ keyword: k, lang: 'zh' })))
+      }
+      
+      const domains = options.domains || ['amazon.com']
+      
+      for (const domain of domains) {
+        for (const { keyword, lang } of keywordList) {
+          if (lang === 'zh' && !domain.includes('.com')) continue
+          
+          const products = await fetchGemstoneFromAmazon(keyword, domain, options.pagesPerKeyword || 1)
+          allProducts.push(...products)
+          
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+      
+      // 去重
+      const uniqueProducts = []
+      const seenAsins = new Set()
+      
+      for (const product of allProducts) {
+        if (product.asin && !seenAsins.has(product.asin)) {
+          seenAsins.add(product.asin)
+          uniqueProducts.push(product)
+        }
+      }
+      
+      results[categoryId] = {
+        category: categoryId,
+        category_name_zh: category.name_zh,
+        total_products: allProducts.length,
+        unique_products: uniqueProducts.length,
+        products: uniqueProducts.slice(0, 50) // 只返回前50个
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    } catch (error) {
+      results[categoryId] = { error: error.message }
+    }
+  }
+  
+  res.json({
+    timestamp: new Date().toISOString(),
+    results
+  })
+})
+
+console.log('宝石数据获取API 已加载')
+
+// 立即注册宝石 API 路由
+app.get('/api/gemstone/categories', (req, res) => {
+  console.log('收到 /api/gemstone/categories 请求')
+  res.json(GEMSTONE_CATEGORIES)
+})
+
+console.log('宝石 API 路由已注册')
+
+console.log('=== Calling ensureDbDir ===')
 ensureDbDir()
+console.log('=== ensureDbDir done, now initDatabase ===')
 initDatabase().then(() => {
+  console.log('=== initDatabase RESOLVED ===')
   cron.schedule('0 8 * * *', async () => {
     console.log('\n=== 开始定时爬取任务 ===')
     const now = new Date()
@@ -2070,12 +2168,3 @@ initDatabase().then(() => {
     console.log(`Data file: ${dbPath}`)
   })
 })
-
-console.log('Instagram API 已加载')
-console.log('Saks Fifth Avenue API 已加载')
-console.log('Fashionphile API 已加载')
-console.log('Etsy API 已加载')
-console.log('Groq Chat API 已加载')
-console.log('产品搜索API 已加载')
-console.log('Chat API 已加载')
-console.log(`默认Chat API提供商: ${process.env.CHAT_API_PROVIDER || 'glm'}`)

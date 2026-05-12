@@ -9,14 +9,31 @@
         <div class="nav-brand">
           <h1>💍 日本配饰销量排行</h1>
         </div>
+        <div class="nav-tabs">
+          <button 
+            :class="['nav-tab', { active: currentPage === 'sales' }]" 
+            @click="currentPage = 'sales'"
+          >
+            📊 配饰排行
+          </button>
+          <button 
+            :class="['nav-tab', { active: currentPage === 'gemstone' }]" 
+            @click="currentPage = 'gemstone'"
+          >
+            💎 宝石数据
+          </button>
+        </div>
         <button class="logout-btn" @click="handleLogout">退出</button>
       </nav>
 
       <!-- 配饰销量排行榜页面 -->
-      <NecklaceSales />
+      <NecklaceSales v-if="currentPage === 'sales'" />
+
+      <!-- 宝石数据获取页面 -->
+      <GemstoneFetcher v-else-if="currentPage === 'gemstone'" />
 
       <footer class="main-footer">
-        <p>日本配饰销量排行 v1.0</p>
+        <p>日本配饰销量排行 v1.1 | 💎 宝石数据获取</p>
       </footer>
       
       <!-- 珠宝顾问组件 -->
@@ -28,6 +45,7 @@
 <script>
 import { ref, onMounted } from 'vue'
 import NecklaceSales from './pages/NecklaceSales.vue'
+import GemstoneFetcher from './pages/GemstoneFetcher.vue'
 import LoginPage from './pages/LoginPage.vue'
 import JewelryAgent from './components/JewelryAgent.vue'
 
@@ -35,11 +53,13 @@ export default {
   name: 'App',
   components: {
     NecklaceSales,
+    GemstoneFetcher,
     LoginPage,
     JewelryAgent
   },
   setup() {
     const isLoggedIn = ref(false)
+    const currentPage = ref('sales')
     
     const checkLogin = () => {
       const loggedIn = localStorage.getItem('isLoggedIn')
@@ -73,6 +93,7 @@ export default {
     
     return {
       isLoggedIn,
+      currentPage,
       handleLoginSuccess,
       handleLogout
     }
@@ -120,6 +141,33 @@ html, body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-tab {
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.nav-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.nav-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: transparent;
 }
 
 .logout-btn {
