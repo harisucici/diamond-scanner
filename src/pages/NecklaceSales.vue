@@ -125,9 +125,10 @@
               <td>{{ item.productName }}</td>
               <td>{{ item.brand }}</td>
               <!-- 根据数据源显示不同内容 -->
-              <td v-if="item._source === 'Fashionphile'">${{ formatNumber(item.price) }}</td>
+              <td v-if="item._source === 'Fashionphile' || item._source === 'eBay'">${{ formatNumber(item.price) }}</td>
               <td v-else>{{ item.priceRange }}</td>
               <td v-if="item._source === 'Fashionphile'" class="sales">-</td>
+              <td v-else-if="item._source === 'eBay'" class="sales">{{ item.condition || '-' }}</td>
               <td v-else class="sales">{{ formatNumber(item.sales) }}</td>
             </tr>
           </tbody>
@@ -153,9 +154,10 @@
             <h3 class="card-product">{{ item.productName }}</h3>
             <div class="card-brand">🏷️ {{ item.brand }}</div>
             <!-- 根据数据源显示不同内容 -->
-            <div v-if="item._source === 'Fashionphile'" class="card-price">💰 ${{ formatNumber(item.price) }} {{ item.currency }}</div>
+            <div v-if="item._source === 'Fashionphile' || item._source === 'eBay'" class="card-price">💰 ${{ formatNumber(item.price) }} {{ item.currency }}</div>
             <div v-else class="card-price">💰 {{ item.priceRange }}</div>
             <div v-if="item._source === 'Fashionphile'" class="card-sales">💎 奢侈品包</div>
+            <div v-else-if="item._source === 'eBay'" class="card-sales">🔗 {{ item.condition || 'eBay商品' }}</div>
             <div v-else class="card-sales">📈 销量: {{ formatNumber(item.sales) }}</div>
           </div>
         </div>
@@ -168,8 +170,8 @@
             <div v-for="item in filteredData" :key="item.id" class="bar-item">
               <div class="bar-label">{{ item.rank }}. {{ item.brand }}</div>
               <div class="bar-container">
-                <div class="bar" :style="{ width: ((item._source === 'Fashionphile' ? item.price : item.sales) / maxSales * 100) + '%' }">
-                  <span class="bar-value">{{ item._source === 'Fashionphile' ? '$' + formatNumber(item.price) : formatNumber(item.sales) }}</span>
+                <div class="bar" :style="{ width: ((item._source === 'Fashionphile' || item._source === 'eBay' ? item.price : item.sales) / maxSales * 100) + '%' }">
+                  <span class="bar-value">{{ item._source === 'Fashionphile' || item._source === 'eBay' ? '$' + formatNumber(item.price) : formatNumber(item.sales) }}</span>
                 </div>
               </div>
             </div>
@@ -199,10 +201,11 @@ export default {
     const availableMonths = ref([])
     const categories = ref([])
 
-    // 数据源配置 (包含BUYMA、Fashionphile和Amazon宝石)
+    // 数据源配置 (包含BUYMA、Fashionphile、Amazon宝石和eBay)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
       { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
+      { id: 'ebay', name: 'eBay', icon: '🔗', enabled: true, api: '/api/ebay' },
       { id: 'amazon_gemstones', name: 'Amazon宝石', icon: '💠', enabled: true, api: '/api/amazon-gemstones' }
     ])
 
@@ -212,8 +215,8 @@ export default {
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
       return Math.max(...data.value.map(item => {
-        // Fashionphile 和 Amazon宝石 用 price，其他用 sales
-        if (item._source === 'Fashionphile' || item._source === 'Amazon宝石') {
+        // Fashionphile、Amazon宝石 和 eBay 用 price，其他用 sales
+        if (item._source === 'Fashionphile' || item._source === 'Amazon宝石' || item._source === 'eBay') {
           return item.price || 0
         }
         return item.sales || 0
@@ -296,6 +299,10 @@ export default {
               // Amazon宝石使用当前月份
               const currentMonth = new Date().toISOString().slice(0, 7)
               url = `${source.api}?month=${currentMonth}`
+            } else if (source.id === 'ebay') {
+              // eBay 使用当前月份
+              const currentMonth = new Date().toISOString().slice(0, 7)
+              url = `${source.api}?month=${currentMonth}`
             }
             
             const response = await fetch(url)
@@ -323,6 +330,16 @@ export default {
                 normalizedItem.image = item.image || item.imageUrl
                 normalizedItem.rating = item.rating
                 normalizedItem.reviews = item.reviews
+              } else if (source.id === 'ebay') {
+                // eBay 数据统一字段
+                normalizedItem.productName = item.productName
+                normalizedItem.brand = item.brand || 'OTHER'
+                normalizedItem.price = item.price
+                normalizedItem.currency = item.currency || 'USD'
+                normalizedItem.url = item.url
+                normalizedItem.image = item.imageUrl
+                normalizedItem.condition = item.condition
+                normalizedItem.seller = item.seller
               }
               
               allData.push(normalizedItem)
@@ -336,9 +353,9 @@ export default {
         
         // 计算统计信息
         const totalRecords = allData.length
-        // BUYMA 用 sales，Fashionphile 和 Amazon宝石 用 price
+        // BUYMA 用 sales，Fashionphile、Amazon宝石 和 eBay 用 price
         const totalSales = allData.reduce((sum, item) => {
-          if (item._source === 'Fashionphile' || item._source === 'Amazon宝石') {
+          if (item._source === 'Fashionphile' || item._source === 'Amazon宝石' || item._source === 'eBay') {
             return sum + (item.price || 0)
           }
           return sum + (item.sales || 0)
@@ -387,6 +404,15 @@ export default {
         console.error('加载Amazon宝石月份失败:', error)
       }
       
+      // 尝试获取 eBay 月份
+      try {
+        const response = await fetch('/api/ebay/months')
+        const months = await response.json()
+        months.forEach(m => allMonths.add(m))
+      } catch (error) {
+        console.error('加载eBay月份失败:', error)
+      }
+      
       availableMonths.value = Array.from(allMonths).sort().reverse()
       
       // 默认选中最新月份
@@ -422,6 +448,9 @@ export default {
               refreshMonthValue = currentMonth
               refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             } else if (source.id === 'amazon_gemstones') {
+              refreshMonthValue = currentMonth
+              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
+            } else if (source.id === 'ebay') {
               refreshMonthValue = currentMonth
               refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             }
