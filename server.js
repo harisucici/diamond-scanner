@@ -45,8 +45,14 @@ if (process.env.NODE_ENV === 'production') {
 
 let db = null
 let gemstoneDb = null // 独立的宝石数据库
-const dbPath = path.join(__dirname, 'db', 'database.sqlite')
-const gemstoneDbPath = path.join(__dirname, 'db', 'gemstone.sqlite') // 宝石数据库路径
+
+// 数据库路径配置 - 支持 Render 持久化存储
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'db')
+const dbPath = path.join(DATA_DIR, 'database.sqlite')
+const gemstoneDbPath = path.join(DATA_DIR, 'gemstone.sqlite')
+
+console.log(`📁 数据目录: ${DATA_DIR}`)
+console.log(`📄 数据库路径: ${dbPath}`)
 
 const COMMON_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -55,11 +61,33 @@ const COMMON_HEADERS = {
 }
 
 const ensureDbDir = () => {
-  const dbDir = path.join(__dirname, 'db')
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true })
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    console.log(`✅ 创建数据目录: ${DATA_DIR}`)
   }
 }
+
+// 初始化数据库文件 - 从 Git 仓库复制到持久化存储
+const initDatabaseFiles = () => {
+  ensureDbDir()
+  
+  const sourceDir = path.join(__dirname, 'db')
+  
+  const filesToCopy = [
+    { target: dbPath, source: path.join(sourceDir, 'database.sqlite'), name: 'database.sqlite' },
+    { target: gemstoneDbPath, source: path.join(sourceDir, 'gemstone.sqlite'), name: 'gemstone.sqlite' }
+  ]
+  
+  filesToCopy.forEach(({ target, source, name }) => {
+    if (!fs.existsSync(target) && fs.existsSync(source)) {
+      fs.copyFileSync(source, target)
+      console.log(`✅ 复制 ${name} 到持久化存储`)
+    }
+  })
+}
+
+// 在启动时初始化数据库文件
+initDatabaseFiles()
 
 const saveDatabase = () => {
   if (db) {
@@ -274,6 +302,28 @@ const initDatabase = async () => {
         condition TEXT,
         imageUrl TEXT,
         url TEXT,
+        created_at TEXT
+      )
+    `)
+
+    // eBay 产品表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ebay_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rank INTEGER,
+        month TEXT,
+        productName TEXT,
+        brand TEXT,
+        price REAL,
+        currency TEXT,
+        condition TEXT,
+        imageUrl TEXT,
+        url TEXT,
+        itemId TEXT,
+        seller TEXT,
+        sellerLocation TEXT,
+        country TEXT,
+        category TEXT,
         created_at TEXT
       )
     `)
@@ -1079,6 +1129,127 @@ const fetchFashionphileData = async (category = 'jewelry') => {
   }
 }
 
+// eBay API 数据获取 (REST API + OAuth 2.0)
+// eBay OAuth 配置
+const EBAY_CONFIG = {
+  production: {
+    tokenUrl: 'https://api.ebay.com/identity/v1/oauth2/token',
+    browseApi: 'https://api.ebay.com/buy/browse/v1'
+  },
+  sandbox: {
+    tokenUrl: 'https://api.sandbox.ebay.com/identity/v1/oauth2/token',
+    browseApi: 'https://api.sandbox.ebay.com/buy/browse/v1'
+  }
+}
+const EBAY_ENV = process.env.EBAY_ENV === 'production' ? 'production' : 'production' // 默认 production
+const ebayConfig = EBAY_CONFIG[EBAY_ENV]
+
+// Token 缓存
+let ebayCachedToken = null
+let ebayTokenExpiry = 0
+
+// 获取 eBay OAuth 2.0 Access Token
+const getEbayAccessToken = async () => {
+  if (ebayCachedToken && Date.now() < ebayTokenExpiry) {
+    return ebayCachedToken
+  }
+  const clientId = process.env.EBAY_APP_ID || process.env.EBAY_API_KEY
+  const clientSecret = process.env.EBAY_CERT_ID
+  if (!clientId || !clientSecret) {
+    throw new Error('缺少 eBay OAuth 凭证，请在 .env 中设置 EBAY_APP_ID 和 EBAY_CERT_ID')
+  }
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const response = await fetch(ebayConfig.tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+  })
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`eBay OAuth 失败: ${response.status} - ${error}`)
+  }
+  const data = await response.json()
+  ebayCachedToken = data.access_token
+  ebayTokenExpiry = Date.now() + (data.expires_in - 300) * 1000
+  console.log(`✅ eBay OAuth Token 已获取，有效期: ${data.expires_in} 秒`)
+  return ebayCachedToken
+}
+
+// 指数退避重试
+const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      if (error.status === 429 && attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt)
+        console.log(`⏳ 速率限制，等待 ${delay}ms 后重试 (${attempt + 1}/${maxRetries})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      throw error
+    }
+  }
+}
+
+const fetchEbayData = async (keywords = 'jewelry', limit = 50) => {
+  try {
+    const token = await getEbayAccessToken()
+    
+    const searchUrl = new URL(`${ebayConfig.browseApi}/item_summary/search`)
+    searchUrl.searchParams.append('q', keywords)
+    searchUrl.searchParams.append('limit', limit.toString())
+    
+    const response = await retryWithBackoff(async () => {
+      const res = await fetch(searchUrl.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+      if (res.status === 429) {
+        const error = new Error('速率限制')
+        error.status = 429
+        throw error
+      }
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(`eBay API 请求失败: ${res.status} - ${errorText}`)
+      }
+      return res
+    })
+    
+    const data = await response.json()
+    let rank = 1
+    const items = (data.itemSummaries || []).map(item => ({
+      rank: rank++,
+      productName: item.title || '',
+      brand: item.brand || 'OTHER',
+      price: parseFloat(item.price?.value || 0),
+      currency: item.price?.currency || 'USD',
+      condition: item.condition || '',
+      imageUrl: item.image?.imageUrl || '',
+      url: item.itemWebUrl || '',
+      itemId: item.itemId || '',
+      seller: item.seller?.username || '',
+      sellerLocation: item.itemLocation?.postalCode || '',
+      country: item.itemLocation?.country || '',
+      category: keywords
+    }))
+    
+    console.log(`✅ eBay REST API: 获取 ${items.length} 条 "${keywords}" 数据 (总计: ${data.total || 0})`)
+    return { items, source: 'ebay-rest-api', total: data.total || 0 }
+  } catch (error) {
+    console.error('❌ eBay API 获取失败:', error.message)
+    return { items: [], error: error.message }
+  }
+}
+
 
 const dbQuery = (sql, params = []) => {
   const stmt = db.prepare(sql)
@@ -1653,6 +1824,88 @@ app.post('/api/fashionphile/refresh/:month', async (req, res) => {
       count: result.items.length, 
       month, 
       platform: 'Fashionphile',
+      items: result.items.slice(0, 5)
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// eBay API 路由
+app.get('/api/ebay', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month, category, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let sql = 'SELECT * FROM ebay_products WHERE month = ?'
+    const params = [tableMonth]
+    
+    if (category) {
+      sql += ' AND category = ?'
+      params.push(category)
+    }
+    
+    sql += ' ORDER BY rank ASC'
+    
+    if (limit) {
+      sql += ' LIMIT ?'
+      params.push(parseInt(limit))
+    }
+    
+    const results = dbQuery(sql, params)
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/ebay/months', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec('SELECT DISTINCT month FROM ebay_products ORDER BY month DESC')
+    const months = result[0]?.values?.map(v => v[0]) || []
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/ebay/categories', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  try {
+    const result = db.exec('SELECT DISTINCT category FROM ebay_products ORDER BY category')
+    const categories = result[0]?.values?.map(v => v[0]) || []
+    res.json(categories)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/ebay/refresh/:month', async (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not ready' })
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    dbExec('DELETE FROM ebay_products WHERE month = ?', [month])
+    
+    const result = await fetchEbayData(category || 'jewelry', 50)
+    const now = new Date().toISOString()
+    
+    result.items.forEach(item => {
+      dbExec(
+        'INSERT INTO ebay_products (rank, month, productName, brand, price, currency, condition, imageUrl, url, itemId, seller, sellerLocation, country, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.condition, item.imageUrl, item.url, item.itemId, item.seller, item.sellerLocation, item.country, item.category, now]
+      )
+    })
+    
+    saveDatabase()
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'eBay',
       items: result.items.slice(0, 5)
     })
   } catch (error) {
