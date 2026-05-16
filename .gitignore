@@ -6,10 +6,15 @@ package-lock.json
 dist/
 build/
 
-# Database files (keep structure, ignore data)
-db/*.sqlite
-db/*.db
+# Database files
+# 生产环境需要数据库文件，只忽略开发时的大文件
+# db/*.sqlite  # 已注释，允许提交数据库
+# db/*.db
 !db/.gitkeep
+
+# 如果数据库太大，使用以下策略：
+# 1. 小于 50MB: 直接提交到 Git
+# 2. 大于 50MB: 使用 Git LFS 或云存储
 
 # Environment variables
 .env

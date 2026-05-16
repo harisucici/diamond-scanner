@@ -5,8 +5,15 @@ services:
     region: tokyo
     buildCommand: npm install && npm run build
     startCommand: npm start
+    # 持久化存储 - 解决数据库丢失问题
+    disk:
+      name: diamond-data
+      mountPath: /opt/render/project/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3000
+      - key: DATA_DIR
+        value: /opt/render/project/data

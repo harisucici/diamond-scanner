@@ -45,8 +45,14 @@ if (process.env.NODE_ENV === 'production') {
 
 let db = null
 let gemstoneDb = null // 独立的宝石数据库
-const dbPath = path.join(__dirname, 'db', 'database.sqlite')
-const gemstoneDbPath = path.join(__dirname, 'db', 'gemstone.sqlite') // 宝石数据库路径
+
+// 数据库路径配置 - 支持 Render 持久化存储
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'db')
+const dbPath = path.join(DATA_DIR, 'database.sqlite')
+const gemstoneDbPath = path.join(DATA_DIR, 'gemstone.sqlite')
+
+console.log(`📁 数据目录: ${DATA_DIR}`)
+console.log(`📄 数据库路径: ${dbPath}`)
 
 const COMMON_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -55,11 +61,33 @@ const COMMON_HEADERS = {
 }
 
 const ensureDbDir = () => {
-  const dbDir = path.join(__dirname, 'db')
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true })
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    console.log(`✅ 创建数据目录: ${DATA_DIR}`)
   }
 }
+
+// 初始化数据库文件 - 从 Git 仓库复制到持久化存储
+const initDatabaseFiles = () => {
+  ensureDbDir()
+  
+  const sourceDir = path.join(__dirname, 'db')
+  
+  const filesToCopy = [
+    { target: dbPath, source: path.join(sourceDir, 'database.sqlite'), name: 'database.sqlite' },
+    { target: gemstoneDbPath, source: path.join(sourceDir, 'gemstone.sqlite'), name: 'gemstone.sqlite' }
+  ]
+  
+  filesToCopy.forEach(({ target, source, name }) => {
+    if (!fs.existsSync(target) && fs.existsSync(source)) {
+      fs.copyFileSync(source, target)
+      console.log(`✅ 复制 ${name} 到持久化存储`)
+    }
+  })
+}
+
+// 在启动时初始化数据库文件
+initDatabaseFiles()
 
 const saveDatabase = () => {
   if (db) {
