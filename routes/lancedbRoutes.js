@@ -30,11 +30,11 @@ router.get('/stats', async (req, res) => {
 /**
  * POST /api/lancedb/search/semantic
  * 语义搜索产品
- * Body: { query: string, limit?: number, platform?: string }
+ * Body: { query: string, limit?: number, platform?: string, category?: string }
  */
 router.post('/search/semantic', async (req, res) => {
   try {
-    const { query, limit = 10, platform } = req.body
+    const { query, limit = 10, platform, category } = req.body
     
     if (!query) {
       return res.status(400).json({
@@ -43,32 +43,98 @@ router.post('/search/semantic', async (req, res) => {
       })
     }
     
+    // 智能提取类别关键词
+    const categoryKeywords = {
+      '耳环': ['耳环', 'イヤリング', 'earring', 'piercing', 'ピアス'],
+      '项链': ['项链', 'ネックレス', 'necklace', 'チェーン', 'chain'],
+      '手链': ['手链', 'ブレスレット', 'bracelet', 'バングル', 'bangle'],
+      '戒指': ['戒指', 'リング', 'ring', '指輪'],
+      '手表': ['手表', '腕時計', 'watch', '時計'],
+      '包包': ['包包', 'バッグ', 'bag', 'トート', 'ショルダー'],
+      '太阳镜': ['太阳镜', 'サングラス', 'sunglass', 'メガネ', '眼镜']
+    }
+    
+    // 从查询中检测类别
+    let detectedCategory = category
+    if (!detectedCategory) {
+      const queryLower = query.toLowerCase()
+      for (const [cat, keywords] of Object.entries(categoryKeywords)) {
+        if (keywords.some(kw => queryLower.includes(kw))) {
+          detectedCategory = cat
+          break
+        }
+      }
+    }
+    
     // 生成查询向量
     const queryVector = await generateEmbedding(query)
     
     // 构建过滤条件
     let filter = null
+    const filterParts = []
+    
     if (platform) {
-      filter = `platform = "${platform}"`
+      filterParts.push(`platform = "${platform}"`)
     }
     
-    // 执行向量搜索
-    const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, limit, filter)
+    if (detectedCategory) {
+      // 类别过滤 - 使用模糊匹配
+      const categoryFilter = categoryKeywords[detectedCategory] || [detectedCategory]
+      // LanceDB 不支持 OR，所以我们在结果中过滤
+    }
     
-    // 解析 metadata
-    const parsedResults = results.map(r => ({
+    if (filterParts.length > 0) {
+      filter = filterParts.join(' AND ')
+    }
+    
+    // 执行向量搜索 - 获取更多结果以便过滤
+    const searchLimit = detectedCategory ? limit * 5 : limit
+    const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, searchLimit, filter)
+    
+    // 解析 metadata 并过滤类别
+    let parsedResults = results.map(r => ({
       ...r,
       metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
       similarity: cosineSimilarity(queryVector, r.name_vector)
     }))
     
+    // 如果检测到类别，进行过滤
+    if (detectedCategory) {
+      const categoryKeywordsList = categoryKeywords[detectedCategory] || [detectedCategory]
+      parsedResults = parsedResults.filter(r => {
+        const cat = (r.category || '').toLowerCase()
+        const name = (r.product_name || '').toLowerCase()
+        
+        // 检查类别字段是否匹配
+        const categoryMatch = categoryKeywordsList.some(kw => 
+          cat.includes(kw.toLowerCase())
+        )
+        
+        // 如果类别字段匹配，直接返回
+        if (categoryMatch) return true
+        
+        // 如果类别字段为空，检查产品名称
+        if (!r.category || cat === '') {
+          return categoryKeywordsList.some(kw => 
+            name.includes(kw.toLowerCase())
+          )
+        }
+        
+        return false
+      })
+    }
+    
     // 按相似度排序
     parsedResults.sort((a, b) => b.similarity - a.similarity)
+    
+    // 限制结果数量
+    parsedResults = parsedResults.slice(0, limit)
     
     res.json({
       success: true,
       data: {
         query,
+        detected_category: detectedCategory || null,
         count: parsedResults.length,
         results: parsedResults
       }

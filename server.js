@@ -10,6 +10,7 @@ import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
 import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData } from './db/lancedb.js'
+import lancedbRoutes from './routes/lancedbRoutes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -2867,6 +2868,10 @@ app.get('/api/amazon-gemstones/history', (req, res) => {
 })
 
 console.log('宝石 API 路由已注册')
+
+// LanceDB 向量搜索 API 路由
+app.use('/api/lancedb', lancedbRoutes)
+console.log('LanceDB API 路由已注册')
 
 console.log('=== Initializing LanceDB ===')
 initTables().then(() => {
