@@ -5,10 +5,11 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import initSqlJs from 'sql.js'
+// SQLite removed - using LanceDB
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
+import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData } from './db/lancedb.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -39,9 +40,8 @@ const PORT = process.env.PORT || 3000
 app.use(cors())
 app.use(express.json())
 
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, 'dist')))
-}
+// 静态文件服务 - 开发和生产环境都启用
+app.use(express.static(path.join(__dirname, 'dist')))
 
 let db = null
 let gemstoneDb = null // 独立的宝石数据库
@@ -115,239 +115,18 @@ const saveGemstoneDatabase = () => {
   }
 }
 
+// SQLite deprecated - using LanceDB
 const initGemstoneDatabase = async () => {
-  try {
-    const SQL = await initSqlJs()
-    
-    if (fs.existsSync(gemstoneDbPath)) {
-      const buffer = fs.readFileSync(gemstoneDbPath)
-      gemstoneDb = new SQL.Database(buffer)
-      console.log('Loaded existing gemstone database')
-    } else {
-      gemstoneDb = new SQL.Database()
-      console.log('Created new gemstone database')
-    }
-    
-    // 创建宝石产品表
-    gemstoneDb.run(`
-      CREATE TABLE IF NOT EXISTS gemstone_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category_id TEXT,
-        category_name_zh TEXT,
-        category_name_en TEXT,
-        keyword TEXT,
-        platform TEXT,
-        title TEXT,
-        price REAL,
-        currency TEXT,
-        rating REAL,
-        reviews INTEGER,
-        seller TEXT,
-        seller_location TEXT,
-        country TEXT,
-        asin TEXT UNIQUE,
-        url TEXT,
-        image TEXT,
-        is_prime INTEGER,
-        is_best_seller INTEGER,
-        timestamp TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-    
-    // 创建分类汇总表
-    gemstoneDb.run(`
-      CREATE TABLE IF NOT EXISTS gemstone_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category_id TEXT UNIQUE,
-        category_name_zh TEXT,
-        category_name_en TEXT,
-        total_products INTEGER DEFAULT 0,
-        last_updated TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-    
-    // 创建刷新历史表
-    gemstoneDb.run(`
-      CREATE TABLE IF NOT EXISTS gemstone_refresh_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        refresh_date TEXT,
-        month TEXT,
-        total_products INTEGER,
-        categories_count INTEGER,
-        status TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-    
-    // 创建索引
-    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_category ON gemstone_products(category_id)`)
-    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_asin ON gemstone_products(asin)`)
-    gemstoneDb.run(`CREATE INDEX IF NOT EXISTS idx_gemstone_price ON gemstone_products(price)`)
-    
-    saveGemstoneDatabase()
-    console.log('Gemstone database initialized successfully')
-  } catch (error) {
-    console.error('Gemstone database initialization error:', error)
-  }
+  console.log('⏭️ SQLite gemstone database skipped (using LanceDB)')
 }
 
+// SQLite deprecated - using LanceDB
 const createTable = (tableName, extraColumns = '') => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS ${tableName} (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rank INTEGER,
-      month TEXT,
-      productName TEXT,
-      brand TEXT,
-      price INTEGER,
-      url TEXT,
-      created_at TEXT
-      ${extraColumns ? ',' + extraColumns : ''}
-    )
-  `)
+  // No-op: tables managed by LanceDB
 }
 
 const initDatabase = async () => {
-  try {
-    const SQL = await initSqlJs()
-    
-    if (fs.existsSync(dbPath)) {
-      const buffer = fs.readFileSync(dbPath)
-      db = new SQL.Database(buffer)
-      console.log('Loaded existing database')
-    } else {
-      db = new SQL.Database()
-      console.log('Created new database')
-    }
-    
-    db.run(`
-      CREATE TABLE IF NOT EXISTS diamonds (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        carat REAL,
-        color TEXT,
-        clarity TEXT,
-        price INTEGER,
-        created_at TEXT
-      )
-    `)
-    
-    db.run(`
-      CREATE TABLE IF NOT EXISTS necklaces (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        website TEXT,
-        productName TEXT,
-        brand TEXT,
-        priceRange TEXT,
-        sales INTEGER,
-        url TEXT,
-        category TEXT,
-        image TEXT,
-        created_at TEXT
-      )
-    `)
-
-    const tables = [
-      'zozotown_products', 'rakuma_products', 'paypay_products', 'yahoo_products',
-      'amazon_products', 'qoo10_products', 'dmm_products', 'kakaku_products',
-      'rakuten_products', 'mercari_products', 'yahoo_auction_products'
-    ]
-    
-    tables.forEach(table => createTable(table))
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS instagram_posts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        hashtag TEXT,
-        postId TEXT,
-        username TEXT,
-        caption TEXT,
-        likes INTEGER,
-        comments INTEGER,
-        imageUrl TEXT,
-        url TEXT,
-        created_at TEXT
-      )
-    `)
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS saks_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        productName TEXT,
-        brand TEXT,
-        price REAL,
-        currency TEXT,
-        imageUrl TEXT,
-        url TEXT,
-        created_at TEXT
-      )
-    `)
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS fashionphile_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        productName TEXT,
-        brand TEXT,
-        price REAL,
-        currency TEXT,
-        condition TEXT,
-        imageUrl TEXT,
-        url TEXT,
-        created_at TEXT
-      )
-    `)
-
-    // eBay 产品表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS ebay_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rank INTEGER,
-        month TEXT,
-        productName TEXT,
-        brand TEXT,
-        price REAL,
-        currency TEXT,
-        condition TEXT,
-        imageUrl TEXT,
-        url TEXT,
-        itemId TEXT,
-        seller TEXT,
-        sellerLocation TEXT,
-        country TEXT,
-        category TEXT,
-        created_at TEXT
-      )
-    `)
-
-    const diamondCount = db.exec('SELECT COUNT(*) as count FROM diamonds')[0]?.values[0][0] || 0
-    if (diamondCount === 0) {
-      const now = new Date().toISOString()
-      db.run('INSERT INTO diamonds (carat, color, clarity, price, created_at) VALUES (?, ?, ?, ?, ?)', [1.5, 'D', 'IF', 15000, now])
-      db.run('INSERT INTO diamonds (carat, color, clarity, price, created_at) VALUES (?, ?, ?, ?, ?)', [0.8, 'F', 'VVS1', 5000, now])
-      db.run('INSERT INTO diamonds (carat, color, clarity, price, created_at) VALUES (?, ?, ?, ?, ?)', [2.0, 'E', 'VVS2', 25000, now])
-      db.run('INSERT INTO diamonds (carat, color, clarity, price, created_at) VALUES (?, ?, ?, ?, ?)', [1.2, 'G', 'VS1', 8000, now])
-      console.log('Added sample diamonds')
-    }
-    
-    const necklaceCount = db.exec('SELECT COUNT(*) as count FROM necklaces')[0]?.values[0][0] || 0
-    if (necklaceCount === 0) {
-      console.log('数据库为空，需要通过刷新按钮获取真实数据')
-    }
-    
-    saveDatabase()
-    console.log('Database initialized successfully')
-  } catch (error) {
-    console.error('Database initialization error:', error)
-  }
+  console.log('⏭️ SQLite main database skipped (using LanceDB)')
 }
 
 const fetchWithRetry = async (url, options = {}, retries = 3) => {
@@ -1318,7 +1097,6 @@ const createGenericRoutes = (basePath, tableName, fetchFunction, extraFields = {
   }
 
   app.post(`/api/${basePath}/refresh/:month`, async (req, res) => {
-    if (!db) return res.status(500).json({ error: 'Database not ready' })
     const { month } = req.params
     const { keyword, category, ...otherParams } = req.query
     
@@ -1332,221 +1110,190 @@ const createGenericRoutes = (basePath, tableName, fetchFunction, extraFields = {
         items = await fetchFunction(keyword || category || 'accessories')
       }
       
-      dbExec(`DELETE FROM ${tableName} WHERE month = ?`, [month])
+      // 删除旧数据
+      await deleteData(tableName, `month = '${month}'`)
       
+      // 插入新数据
       const now = new Date().toISOString()
-      items.forEach((item, index) => {
-        dbExec(
-          `INSERT INTO ${tableName} (rank, month, productName, brand, price, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [item.rank || index + 1, month, item.productName, item.brand, item.price, item.url || '', now]
-        )
-      })
+      let insertedCount = 0
       
-      saveDatabase()
-      res.json({ success: true, count: items.length, month, platform: basePath })
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const record = {
+          id: `${basePath}-${month}-${i + 1}`,
+          rank: item.rank || i + 1,
+          month,
+          productName: item.productName,
+          brand: item.brand || '',
+          price: item.price || 0,
+          url: item.url || '',
+          created_at: now
+        }
+        await insertData(tableName, record)
+        insertedCount++
+      }
+      
+      res.json({ success: true, count: insertedCount, month, platform: basePath })
     } catch (error) {
       res.status(500).json({ error: error.message })
     }
   })
 }
 
-app.get('/api/health', (req, res) => {
-  if (!db) {
-    return res.json({ status: 'error', message: 'Database not initialized' })
-  }
-  
-  const diamondCount = db.exec('SELECT COUNT(*) FROM diamonds')[0]?.values[0][0] || 0
-  const necklaceCount = db.exec('SELECT COUNT(*) FROM necklaces')[0]?.values[0][0] || 0
-  const latestMonth = db.exec("SELECT DISTINCT month FROM necklaces ORDER BY month DESC LIMIT 1")[0]?.values[0][0]
-  
-  res.json({
-    status: 'success',
-    message: 'SQLite database connected',
-    diamondsCount: diamondCount,
-    necklaceSalesCount: necklaceCount,
-    latestNecklaceMonth: latestMonth || null,
-    timestamp: new Date().toISOString(),
-    storage: 'SQLite (sql.js)'
-  })
-})
-
-app.get('/api/diamonds', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const results = dbQuery('SELECT * FROM diamonds ORDER BY id')
-  res.json(results)
-})
-
-app.post('/api/diamonds', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { carat, color, clarity, price } = req.body
-  const created_at = new Date().toISOString()
-  
-  dbExec('INSERT INTO diamonds (carat, color, clarity, price, created_at) VALUES (?, ?, ?, ?, ?)', 
-    [carat, color, clarity, price, created_at])
-  
-  const id = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
-  saveDatabase()
-  
-  res.json({ id, carat, color, clarity, price, created_at, message: 'Diamond added successfully' })
-})
-
-app.delete('/api/diamonds/:id', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const id = parseInt(req.params.id)
-  dbExec('DELETE FROM diamonds WHERE id = ?', [id])
-  saveDatabase()
-  
-  res.json({ message: 'Diamond deleted successfully' })
-})
-
-app.get('/api/necklaces', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month, website, brand, search, limit } = req.query
-  let sql = 'SELECT * FROM necklaces WHERE 1=1'
-  const params = []
-  
-  if (month) {
-    sql += ' AND month = ?'
-    params.push(month)
-  }
-  if (website) {
-    sql += ' AND website LIKE ?'
-    params.push(`%${website}%`)
-  }
-  if (brand) {
-    sql += ' AND brand LIKE ?'
-    params.push(`%${brand}%`)
-  }
-  if (search) {
-    sql += ' AND (productName LIKE ? OR brand LIKE ? OR website LIKE ?)'
-    const s = `%${search}%`
-    params.push(s, s, s)
-  }
-  
-  sql += ' ORDER BY rank ASC'
-  
-  if (limit) {
-    sql += ' LIMIT ?'
-    params.push(parseInt(limit))
-  }
-  
-  const results = dbQuery(sql, params)
-  res.json(results)
-})
-
-app.get('/api/necklaces/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const result = db.exec('SELECT DISTINCT month FROM necklaces ORDER BY month ASC')
-  const months = result[0]?.values.map(v => v[0]) || []
-  res.json(months)
-})
-
-app.get('/api/necklaces/websites', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const result = db.exec('SELECT DISTINCT website FROM necklaces ORDER BY website')
-  const websites = result[0]?.values.map(v => v[0]) || []
-  res.json(websites)
-})
-
-app.get('/api/necklaces/brands', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const result = db.exec('SELECT DISTINCT brand FROM necklaces ORDER BY brand')
-  const brands = result[0]?.values.map(v => v[0]) || []
-  res.json(brands)
-})
-
-app.get('/api/necklaces/top10/:month', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month } = req.params
-  const results = dbQuery('SELECT * FROM necklaces WHERE month = ? ORDER BY rank ASC LIMIT 10', [month])
-  res.json(results)
-})
-
-app.get('/api/necklaces/categories/:month', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month } = req.params
-  const result = db.exec(`SELECT DISTINCT category FROM necklaces WHERE month = ? AND category != '' ORDER BY category`, [month])
-  const categories = result[0]?.values.map(v => v[0]) || []
-  res.json(categories)
-})
-
-app.get('/api/necklaces/category/:month/:category', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month, category } = req.params
-  const decodedCategory = decodeURIComponent(category)
-  
-  const sql = `
-    SELECT id, rank, month, website, productName, brand, priceRange, sales, url, category, created_at,
-           ROW_NUMBER() OVER (ORDER BY rank) as category_rank
-    FROM necklaces 
-    WHERE month = ? AND category LIKE ?
-    LIMIT 10
-  `
-  const results = dbQuery(sql, [month, `%${decodedCategory}`])
-  results.forEach(row => {
-    row.rank = row.category_rank
-    delete row.category_rank
-  })
-  res.json(results)
-})
-
-app.get('/api/necklaces/stats/overview', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month } = req.query
-  let whereClause = ''
-  const params = []
-  if (month) {
-    whereClause = 'WHERE month = ?'
-    params.push(month)
-  }
-  
-  const countResult = db.exec(`SELECT COUNT(*), COALESCE(SUM(sales), 0) FROM necklaces ${whereClause}`, params)
-  const totalRecords = countResult[0]?.values[0][0] || 0
-  const totalSales = countResult[0]?.values[0][1] || 0
-  
-  const websiteResult = db.exec(`SELECT website, SUM(sales), COUNT(*) FROM necklaces ${whereClause} GROUP BY website`, params)
-  const byWebsite = {}
-  if (websiteResult[0]) {
-    websiteResult[0].values.forEach(v => {
-      byWebsite[v[0]] = { totalSales: v[1], count: v[2] }
+app.get('/api/health', async (req, res) => {
+  try {
+    const stats = await getLanceDbStats()
+    res.json({
+      status: 'success',
+      message: 'LanceDB connected',
+      timestamp: new Date().toISOString(),
+      storage: 'LanceDB',
+      tables: stats
     })
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message })
   }
+})
+
+app.get('/api/diamonds', async (req, res) => {
+  try {
+    const results = await queryData('diamonds', null, 1000)
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/diamonds', async (req, res) => {
+  try {
+    const { carat, color, clarity, price } = req.body
+    const created_at = new Date().toISOString()
+    
+    const diamond = { carat, color, clarity, price, created_at }
+    await insertData('diamonds', diamond)
+    
+    res.json({ ...diamond, message: 'Diamond added successfully' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/diamonds/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id)
+    await deleteData('diamonds', `id = ${id}`)
+    res.json({ message: 'Diamond deleted successfully' })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces', async (req, res) => {
+  try {
+    const { month, website, brand, search, limit } = req.query
+    let filter = null
+    
+    if (month) filter = `month = '${month}'`
+    
+    const results = await queryData('necklaces', filter, limit ? parseInt(limit) : 1000)
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/months', async (req, res) => {
+  try {
+    const results = await queryData('necklaces', null, 10000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort()
+    res.json(months)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/websites', async (req, res) => {
+  try {
+    const results = await queryData('necklaces', null, 10000)
+    const websites = [...new Set(results.map(r => r.website).filter(Boolean))].sort()
+    res.json(websites)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/brands', async (req, res) => {
+  try {
+    const results = await queryData('necklaces', null, 10000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/top10/:month', async (req, res) => {
+  try {
+    const { month } = req.params
+    const results = await queryData('necklaces', `month = '${month}'`, 10)
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/categories/:month', async (req, res) => {
+  try {
+    const { month } = req.params
+    const results = await queryData('necklaces', `month = '${month}'`, 1000)
+    const categories = [...new Set(results.map(r => r.category).filter(c => c && c !== ''))].sort()
+    res.json(categories)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/necklaces/category/:month/:category', async (req, res) => {
+  try {
+    const { month, category } = req.params
+    const decodedCategory = decodeURIComponent(category)
+    const results = await queryData('necklaces', `month = '${month}' AND category = '${decodedCategory}'`, 1000)
+    res.json(results)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
   
-  const brandResult = db.exec(`SELECT brand, SUM(sales), COUNT(*) FROM necklaces ${whereClause} GROUP BY brand`, params)
-  const byBrand = {}
-  if (brandResult[0]) {
-    brandResult[0].values.forEach(v => {
-      byBrand[v[0]] = { totalSales: v[1], count: v[2] }
+// Legacy necklaces stats - simplified for LanceDB
+app.get('/api/necklaces/stats/overview', async (req, res) => {
+  try {
+    const results = await queryData('necklaces', null, 10000)
+    const totalRecords = results.length
+    const totalSales = results.reduce((sum, r) => sum + (r.sales || 0), 0)
+    
+    const byWebsite = {}
+    results.forEach(r => {
+      if (r.website) {
+        if (!byWebsite[r.website]) byWebsite[r.website] = { sales: 0, count: 0 }
+        byWebsite[r.website].sales += r.sales || 0
+        byWebsite[r.website].count++
+      }
     })
+    
+    res.json({ totalRecords, totalSales, byWebsite })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
   }
-  
-  const monthsResult = db.exec('SELECT DISTINCT month FROM necklaces ORDER BY month DESC')
-  const months = monthsResult[0]?.values.map(v => v[0]) || []
-  
-  res.json({ totalRecords, totalSales, byWebsite, byBrand, months })
 })
 
 app.post('/api/necklaces/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
-  const { month } = req.params
-  
   try {
-    const buymaItems = await fetchBuymaData('accessories')
+    const { month } = req.params
     
-    dbExec('DELETE FROM necklaces WHERE month = ?', [month])
+    // 获取 BUYMA 数据
+    const items = await fetchBuymaData('accessories')
     
-    const now = new Date().toISOString()
-    
-    if (!buymaItems || buymaItems.length === 0) {
-      saveDatabase()
+    if (!items || items.length === 0) {
       return res.status(502).json({ 
         error: '无法获取真实数据', 
         message: 'BUYMA网站爬取失败，请稍后重试',
@@ -1554,23 +1301,43 @@ app.post('/api/necklaces/refresh/:month', async (req, res) => {
       })
     }
     
-    buymaItems.forEach(item => {
+    // 删除旧数据
+    await deleteData('necklaces', `month = '${month}'`)
+    
+    // 插入新数据
+    const now = new Date().toISOString()
+    let insertedCount = 0
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
       const priceRange = item.price > 0 ? `${item.price.toLocaleString()}円` : '未定'
       const sales = Math.floor(Math.random() * 1000) + 100
       
-      dbExec('INSERT INTO necklaces (rank, month, website, productName, brand, priceRange, sales, url, category, image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [item.rank, month, 'BUYMA', item.productName, item.brand, priceRange, sales, item.url, item.category || '', item.image || '', now])
-    })
-    
-    console.log(`从BUYMA获取了${buymaItems.length}条真实数据`)
-    saveDatabase()
+      const record = {
+        id: `${month}-${i + 1}`,
+        rank: item.rank || i + 1,
+        month,
+        website: 'BUYMA',
+        productName: item.productName,
+        brand: item.brand || '',
+        priceRange,
+        sales,
+        url: item.url || '',
+        category: item.category || '',
+        image: item.image || '',
+        created_at: now
+      }
+      
+      await insertData('necklaces', record)
+      insertedCount++
+    }
     
     res.json({
       success: true,
       message: `${month} 数据已刷新 (来源: BUYMA)`,
       month,
       dataSource: 'BUYMA真实数据',
-      count: buymaItems.length,
+      count: insertedCount,
       updatedAt: now
     })
   } catch (error) {
@@ -1578,6 +1345,8 @@ app.post('/api/necklaces/refresh/:month', async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+// End of LanceDB-converted routes
 
 createGenericRoutes('zozotown', 'zozotown_products', fetchZozotownData, { category: 'TEXT' })
 createGenericRoutes('rakuma', 'rakuma_products', fetchRakumaData)
@@ -1597,13 +1366,11 @@ app.get('/api/test', (req, res) => {
     status: 'OK',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
-    storage: 'SQLite (sql.js)'
+    storage: 'LanceDB'
   })
 })
 
-app.get('/api/sources/status', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  
+app.get('/api/sources/status', async (req, res) => {
   const sources = [
     { id: 'buyma', name: 'BUYMA', table: 'necklaces' },
     { id: 'rakuten', name: '樂天', table: 'rakuten_products' },
@@ -1611,60 +1378,56 @@ app.get('/api/sources/status', (req, res) => {
     { id: 'yahoo-auction', name: 'Yahoo!拍賣', table: 'yahoo_auction_products' }
   ]
   
-  const status = sources.map(s => {
-    try {
-      const result = db.exec(`SELECT COUNT(*) as count FROM ${s.table}`)
-      const count = result[0]?.values[0][0] || 0
-      const monthsResult = db.exec(`SELECT DISTINCT month FROM ${s.table} ORDER BY month DESC LIMIT 3`)
-      const months = monthsResult[0]?.values.map(v => v[0]) || []
-      return { id: s.id, name: s.name, count, months, hasData: count > 0 }
-    } catch (e) {
-      return { id: s.id, name: s.name, count: 0, months: [], hasData: false, error: e.message }
-    }
-  })
-  
-  res.json(status)
-})
-
-app.get('/api/instagram', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
-  const { month, hashtag } = req.query
-  const tableMonth = month || new Date().toISOString().slice(0, 7)
-  const tag = hashtag || 'jewelry'
-  
   try {
-    const result = db.exec(`SELECT * FROM instagram_posts WHERE month = '${tableMonth}' AND hashtag = '${tag}' ORDER BY rank LIMIT 30`)
-    const columns = result[0]?.columns || []
-    const values = result[0]?.values || []
+    const status = await Promise.all(sources.map(async s => {
+      try {
+        const results = await queryData(s.table, null, 10000)
+        const count = results.length
+        const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse().slice(0, 3)
+        return { id: s.id, name: s.name, count, months, hasData: count > 0 }
+      } catch (e) {
+        return { id: s.id, name: s.name, count: 0, months: [], hasData: false, error: e.message }
+      }
+    }))
     
-    const items = values.map(row => {
-      const obj = {}
-      columns.forEach((col, i) => obj[col] = row[i])
-      return obj
-    })
-    
-    res.json(items)
+    res.json(status)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/instagram/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/instagram', async (req, res) => {
+  const { month, hashtag } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  const tag = hashtag || 'jewelry'
+  
   try {
-    const result = db.exec("SELECT DISTINCT month FROM instagram_posts ORDER BY month DESC")
-    const months = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('instagram_posts', null, 1000)
+    const filtered = results
+      .filter(r => r.month === tableMonth && r.hashtag === tag)
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0))
+      .slice(0, 30)
+    
+    res.json(filtered)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/instagram/months', async (req, res) => {
+  try {
+    const results = await queryData('instagram_posts', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
     res.json(months)
   } catch (error) {
     res.json([])
   }
 })
 
-app.get('/api/instagram/hashtags', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/instagram/hashtags', async (req, res) => {
   try {
-    const result = db.exec("SELECT DISTINCT hashtag FROM instagram_posts ORDER BY hashtag")
-    const hashtags = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('instagram_posts', null, 1000)
+    const hashtags = [...new Set(results.map(r => r.hashtag).filter(Boolean))].sort()
     res.json(hashtags)
   } catch (error) {
     res.json(['jewelry', 'accessories', 'リング', 'ピアス', 'ネックレス'])
@@ -1672,56 +1435,58 @@ app.get('/api/instagram/hashtags', (req, res) => {
 })
 
 app.post('/api/instagram/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
   const { month } = req.params
   const { hashtag } = req.query
   const tag = hashtag || 'jewelry'
   
   try {
-    dbExec(`DELETE FROM instagram_posts WHERE month = ? AND hashtag = ?`, [month, tag])
+    await deleteData('instagram_posts', { month, hashtag: tag })
     
     const result = await fetchInstagramData(tag)
     const now = new Date().toISOString()
     
-    result.items.forEach(item => {
-      dbExec(`INSERT INTO instagram_posts (rank, month, hashtag, postId, username, caption, likes, comments, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [item.rank, month, item.hashtag, item.postId, item.username, item.caption, item.likes, item.comments, item.imageUrl, item.url, now])
-    })
+    const items = result.items.map(item => ({
+      rank: item.rank,
+      month,
+      hashtag: item.hashtag,
+      postId: item.postId,
+      username: item.username,
+      caption: item.caption,
+      likes: item.likes,
+      comments: item.comments,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
     
-    saveDatabase()
+    if (items.length > 0) {
+      await insertData('instagram_posts', items)
+    }
+    
     res.json({ success: true, count: result.items.length, month, hashtag: tag, platform: 'Instagram', items: result.items.slice(0, 3), debugHtml: result.html })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/saks', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/saks', async (req, res) => {
   const { month } = req.query
   const tableMonth = month || new Date().toISOString().slice(0, 7)
   
   try {
-    const result = db.exec(`SELECT * FROM saks_products WHERE month = '${tableMonth}' ORDER BY rank LIMIT 30`)
-    const columns = result[0]?.columns || []
-    const values = result[0]?.values || []
-    
-    const items = values.map(row => {
-      const obj = {}
-      columns.forEach((col, i) => obj[col] = row[i])
-      return obj
-    })
-    
+    const items = await queryData('saks_products', `month = '${tableMonth}'`, 30)
+    // Sort by rank on client side
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
     res.json(items)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/saks/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/saks/months', async (req, res) => {
   try {
-    const result = db.exec("SELECT DISTINCT month FROM saks_products ORDER BY month DESC")
-    const months = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('saks_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
     res.json(months)
   } catch (error) {
     res.json([])
@@ -1729,71 +1494,69 @@ app.get('/api/saks/months', (req, res) => {
 })
 
 app.post('/api/saks/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
   const { month } = req.params
   
   try {
-    dbExec(`DELETE FROM saks_products WHERE month = ?`, [month])
+    await deleteData('saks_products', { month })
     
     const result = await fetchSaksData()
     const now = new Date().toISOString()
     
-    result.items.forEach(item => {
-      dbExec(`INSERT INTO saks_products (rank, month, productName, brand, price, currency, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.imageUrl, item.url, now])
-    })
+    const items = result.items.map(item => ({
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
     
-    saveDatabase()
+    if (items.length > 0) {
+      await insertData('saks_products', items)
+    }
+    
     res.json({ success: true, count: result.items.length, month, platform: 'Saks Fifth Avenue', items: result.items.slice(0, 3), debugHtml: result.html })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/fashionphile', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/fashionphile', async (req, res) => {
   const { month, brand, limit } = req.query
   const tableMonth = month || new Date().toISOString().slice(0, 7)
   
   try {
-    let sql = 'SELECT * FROM fashionphile_products WHERE month = ?'
-    const params = [tableMonth]
+    let items = await queryData('fashionphile_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
     
     if (brand) {
-      sql += ' AND brand = ?'
-      params.push(brand)
+      items = items.filter(item => item.brand === brand)
     }
     
-    sql += ' ORDER BY rank ASC'
-    
-    if (limit) {
-      sql += ' LIMIT ?'
-      params.push(parseInt(limit))
-    }
-    
-    const results = dbQuery(sql, params)
-    res.json(results)
+    // Sort by rank
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/fashionphile/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/fashionphile/months', async (req, res) => {
   try {
-    const result = db.exec('SELECT DISTINCT month FROM fashionphile_products ORDER BY month DESC')
-    const months = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('fashionphile_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
     res.json(months)
   } catch (error) {
     res.json([])
   }
 })
 
-app.get('/api/fashionphile/brands', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/fashionphile/brands', async (req, res) => {
   try {
-    const result = db.exec('SELECT DISTINCT brand FROM fashionphile_products ORDER BY brand')
-    const brands = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('fashionphile_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
     res.json(brands)
   } catch (error) {
     res.json([])
@@ -1801,24 +1564,32 @@ app.get('/api/fashionphile/brands', (req, res) => {
 })
 
 app.post('/api/fashionphile/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
   const { month } = req.params
   const { category } = req.query
   
   try {
-    dbExec('DELETE FROM fashionphile_products WHERE month = ?', [month])
+    await deleteData('fashionphile_products', { month })
     
     const result = await fetchFashionphileData(category || 'jewelry')
     const now = new Date().toISOString()
     
-    result.items.forEach(item => {
-      dbExec(
-        'INSERT INTO fashionphile_products (rank, month, productName, brand, price, currency, condition, imageUrl, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.condition, item.imageUrl, item.url, now]
-      )
-    })
+    const items = result.items.map(item => ({
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency,
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
     
-    saveDatabase()
+    if (items.length > 0) {
+      await insertData('fashionphile_products', items)
+    }
+    
     res.json({ 
       success: true, 
       count: result.items.length, 
@@ -1832,50 +1603,39 @@ app.post('/api/fashionphile/refresh/:month', async (req, res) => {
 })
 
 // eBay API 路由
-app.get('/api/ebay', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/ebay', async (req, res) => {
   const { month, category, limit } = req.query
   const tableMonth = month || new Date().toISOString().slice(0, 7)
   
   try {
-    let sql = 'SELECT * FROM ebay_products WHERE month = ?'
-    const params = [tableMonth]
+    let items = await queryData('ebay_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
     
     if (category) {
-      sql += ' AND category = ?'
-      params.push(category)
+      items = items.filter(item => item.category === category)
     }
     
-    sql += ' ORDER BY rank ASC'
-    
-    if (limit) {
-      sql += ' LIMIT ?'
-      params.push(parseInt(limit))
-    }
-    
-    const results = dbQuery(sql, params)
-    res.json(results)
+    // Sort by rank
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-app.get('/api/ebay/months', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/ebay/months', async (req, res) => {
   try {
-    const result = db.exec('SELECT DISTINCT month FROM ebay_products ORDER BY month DESC')
-    const months = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('ebay_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
     res.json(months)
   } catch (error) {
     res.json([])
   }
 })
 
-app.get('/api/ebay/categories', (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
+app.get('/api/ebay/categories', async (req, res) => {
   try {
-    const result = db.exec('SELECT DISTINCT category FROM ebay_products ORDER BY category')
-    const categories = result[0]?.values?.map(v => v[0]) || []
+    const results = await queryData('ebay_products', null, 1000)
+    const categories = [...new Set(results.map(r => r.category).filter(Boolean))].sort()
     res.json(categories)
   } catch (error) {
     res.json([])
@@ -1883,24 +1643,37 @@ app.get('/api/ebay/categories', (req, res) => {
 })
 
 app.post('/api/ebay/refresh/:month', async (req, res) => {
-  if (!db) return res.status(500).json({ error: 'Database not ready' })
   const { month } = req.params
   const { category } = req.query
   
   try {
-    dbExec('DELETE FROM ebay_products WHERE month = ?', [month])
+    await deleteData('ebay_products', { month })
     
     const result = await fetchEbayData(category || 'jewelry', 50)
     const now = new Date().toISOString()
     
-    result.items.forEach(item => {
-      dbExec(
-        'INSERT INTO ebay_products (rank, month, productName, brand, price, currency, condition, imageUrl, url, itemId, seller, sellerLocation, country, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [item.rank, month, item.productName, item.brand, item.price, item.currency, item.condition, item.imageUrl, item.url, item.itemId, item.seller, item.sellerLocation, item.country, item.category, now]
-      )
-    })
+    const items = result.items.map(item => ({
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency,
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      itemId: item.itemId,
+      seller: item.seller,
+      sellerLocation: item.sellerLocation,
+      country: item.country,
+      category: item.category,
+      created_at: now
+    }))
     
-    saveDatabase()
+    if (items.length > 0) {
+      await insertData('ebay_products', items)
+    }
+    
     res.json({ 
       success: true, 
       count: result.items.length, 
@@ -3095,41 +2868,12 @@ app.get('/api/amazon-gemstones/history', (req, res) => {
 
 console.log('宝石 API 路由已注册')
 
-console.log('=== Calling ensureDbDir ===')
-ensureDbDir()
-console.log('=== ensureDbDir done, now initDatabase ===')
-initDatabase().then(() => {
-  console.log('=== initDatabase RESOLVED, now initGemstoneDatabase ===')
-  return initGemstoneDatabase()
-}).then(() => {
-  console.log('=== initGemstoneDatabase RESOLVED ===')
+console.log('=== Initializing LanceDB ===')
+initTables().then(() => {
+  console.log('=== LanceDB initialized ===')
   cron.schedule('0 8 * * *', async () => {
     console.log('\n=== 开始定时爬取任务 ===')
-    const now = new Date()
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    
-    try {
-      const buymaItems = await fetchBuymaData('メイン')
-      
-      if (buymaItems && buymaItems.length > 0) {
-        dbExec('DELETE FROM necklaces WHERE month = ?', [month])
-        
-        const now = new Date().toISOString()
-        
-        buymaItems.forEach(item => {
-          const priceRange = item.price > 0 ? `${item.price.toLocaleString()}円` : '未定'
-          const sales = Math.floor(Math.random() * 1000) + 100
-          
-          dbExec('INSERT INTO necklaces (rank, month, website, productName, brand, priceRange, sales, url, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [item.rank, month, 'BUYMA', item.productName, item.brand, priceRange, sales, item.url, item.category || '', now])
-        })
-        
-        saveDatabase()
-        console.log(`定时任务完成: ${month} 更新了${buymaItems.length}条数据`)
-      }
-    } catch (error) {
-      console.error('定时任务失败:', error.message)
-    }
+    console.log('定时任务: LanceDB 模式，跳过 SQLite 写入')
     console.log('=== 定时爬取任务结束 ===\n')
   })
   
@@ -3137,9 +2881,7 @@ initDatabase().then(() => {
   
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
-    console.log(`Main Database: SQLite (sql.js)`)
-    console.log(`Main DB file: ${dbPath}`)
-    console.log(`Gemstone Database: SQLite (sql.js)`)
-    console.log(`Gemstone DB file: ${gemstoneDbPath}`)
+    console.log(`Vector Database: LanceDB`)
+    console.log(`LanceDB path: ${LANCEDB_DIR || './lancedb'}`)
   })
 })

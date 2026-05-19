@@ -1,15 +1,21 @@
 {
   "name": "diamond-scanner",
   "version": "1.0.0",
-  "description": "A Vue.js project with SQLite for diamond scanning",
+  "description": "A Vue.js project with LanceDB for diamond scanning",
   "main": "src/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "node server.js",
+    "init-lancedb": "node scripts/init-lancedb.js",
+    "test": "vitest",
+    "test:unit": "vitest run tests/unit.test.js",
+    "test:integration": "vitest run tests/integration.test.js",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@lancedb/lancedb": "^0.27.2",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.18.0",
@@ -17,12 +23,15 @@
     "js-yaml": "^4.1.1",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
-    "sql.js": "^1.14.1",
     "vue": "^3.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "optionalDependencies": {
+    "@lancedb/lancedb-darwin-x64": "^0.22.3"
+  }
 }
