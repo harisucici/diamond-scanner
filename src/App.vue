@@ -16,12 +16,6 @@
           >
             📊 配饰排行
           </button>
-          <button 
-            :class="['nav-tab', { active: currentPage === 'gemstone' }]" 
-            @click="currentPage = 'gemstone'"
-          >
-            💎 宝石数据
-          </button>
         </div>
         <button class="logout-btn" @click="handleLogout">退出</button>
       </nav>

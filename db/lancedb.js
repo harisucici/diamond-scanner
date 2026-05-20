@@ -9,12 +9,25 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
+import yaml from 'js-yaml'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// LanceDB 数据目录
-const LANCEDB_DIR = process.env.LANCEDB_DIR || join(__dirname, '../lancedb')
+// 直接加载配置文件（避免循环依赖）
+const loadConfig = () => {
+  const configPath = join(__dirname, '../config/app.yaml')
+  if (fs.existsSync(configPath)) {
+    const config = yaml.load(fs.readFileSync(configPath, 'utf-8'))
+    return config
+  }
+  return {}
+}
+
+const appConfig = loadConfig()
+
+// LanceDB 数据目录 - 使用配置文件
+const LANCEDB_DIR = process.env.LANCEDB_DIR || appConfig.database?.lancedb_dir || join(__dirname, '../lancedb')
 
 console.log(`🔍 LanceDB 目录: ${LANCEDB_DIR}`)
 

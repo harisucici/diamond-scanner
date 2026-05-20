@@ -1,0 +1,65 @@
+# 平台 URL 模板配置
+platforms:
+  # 日本二手交易平台
+  fril:
+    name: "Fril"
+    url_template: "https://fril.jp/items/{id}"
+    
+  paypay:
+    name: "PayPay Fleamarket"
+    url_template: "https://paypayfleamarket.yahoo.co.jp/items/{id}"
+    
+  mercari:
+    name: "Mercari JP"
+    url_template: "https://jp.mercari.com{path}"
+    
+  rakuma:
+    name: "Rakuma"
+    url_template: "https://fril.jp/items/{id}"
+    
+  # 日本购物平台
+  kakaku:
+    name: "価格.com"
+    url_template: "https://kakaku.com{path}"
+    
+  amazon_jp:
+    name: "Amazon JP"
+    url_template: "https://www.amazon.co.jp/dp/{asin}"
+    
+  rakuten:
+    name: "Rakuten"
+    url_template: ""
+    
+  yahoo_auction:
+    name: "Yahoo Auction"
+    url_template: ""
+    
+  qoo10:
+    name: "Qoo10"
+    url_template: ""
+    
+  zozotown:
+    name: "ZOZOTOWN"
+    url_template: ""
+    
+  dmm:
+    name: "DMM"
+    url_template: ""
+    
+  # 奢侈品平台
+  buyma:
+    name: "BUYMA"
+    url_template: "https://www.buyma.com/item/{id}/"
+    
+  fashionphile:
+    name: "Fashionphile"
+    url_template: "https://www.fashionphile.com/products/{handle}"
+    
+  saks:
+    name: "Saks Fifth Avenue"
+    url_template: ""
+    
+  # 社交媒体
+  instagram:
+    name: "Instagram"
+    url_template: "https://www.instagram.com/p/{shortcode}/"

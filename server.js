@@ -12,6 +12,8 @@ import yaml from 'js-yaml'
 import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, TABLES } from './db/lancedb.js'
 import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
+// 加载统一配置
+import * as config from './config/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -24,7 +26,8 @@ const chatPromptConfig = yaml.load(fs.readFileSync(join(__dirname, 'config/chat-
 console.log('Chat prompt config loaded')
 const SYSTEM_PROMPT = chatPromptConfig.systemPrompt
 
-const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || ''
+// 使用配置替代硬编码
+const PROXY_URL = config.app.proxyUrl
 
 const getProxyAgent = async () => {
   if (!PROXY_URL) return undefined
@@ -37,7 +40,7 @@ const getProxyAgent = async () => {
 }
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = config.app.port
 
 app.use(cors())
 app.use(express.json())
@@ -54,466 +57,6 @@ const fetchWithRetry = async (url, options = {}, retries = 3) => {
       if (i === retries - 1) throw error
       await new Promise(r => setTimeout(r, 1000 * (i + 1)))
     }
-  }
-}
-
-const fetchZozotownData = async (category = 'accessories') => {
-  try {
-    const categoryMap = {
-      'accessories': 'a0001',
-      'necklaces': 'a0001010',
-      'bracelets': 'a0001020',
-      'rings': 'a0001030',
-      'earrings': 'a0001040'
-    }
-    
-    const categoryCode = categoryMap[category] || 'a0001'
-    const url = `https://www.zozo.jp/genre/${categoryCode}/?p=1&rank=1`
-    
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    
-    const items = []
-    const productPattern = /data-product-name="([^"]+)"[^>]*data-brand-name="([^"]+)"[^>]*data-price="(\d+)"/g
-    let match
-    let rank = 1
-    
-    while ((match = productPattern.exec(html)) !== null && rank <= 30) {
-      items.push({
-        rank: rank++,
-        productName: match[1],
-        brand: match[2],
-        price: parseInt(match[3]),
-        category: category,
-        url: ''
-      })
-    }
-    
-    if (items.length < 10) {
-      const simplePattern = /class="item-card[^"]*"[^>]*>[\s\S]*?class="item-name"[^>]*>([^<]+)<[\s\S]*?class="brand-name"[^>]*>([^<]+)<[\s\S]*?class="price"[^>]*>(\d+,?\d*)/g
-      while ((match = simplePattern.exec(html)) !== null && rank <= 30) {
-        const productName = match[1].trim()
-        if (!items.find(i => i.productName === productName)) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: match[2].trim(),
-            price: parseInt(match[3].replace(/\D/g, '')),
-            category: category,
-            url: ''
-          })
-        }
-      }
-    }
-    
-    console.log(`ZOZOTOWN爬取: 获取${items.length}条${category}数据`)
-    return items
-  } catch (error) {
-    console.error('ZOZOTOWN爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchRakumaData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://fril.jp/s?query=${encodeURIComponent(keyword)}&sort=item_sold_count&order=desc`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    
-    const itemPattern = /data-item-id="(\d+)"[^>]*>[\s\S]*?class="item-name"[^>]*>([^<]+)<[\s\S]*?class="user-icon"[^>]*>[\s\S]*?class="user-name"[^>]*>([^<]+)<[\s\S]*?class="price"[^>]*>(\d+,?\d*)/g
-    let match
-    let rank = 1
-    
-    while ((match = itemPattern.exec(html)) !== null && rank <= 30) {
-      items.push({
-        rank: rank++,
-        itemId: match[1],
-        productName: match[2].trim(),
-        brand: match[3].trim() || 'OTHER',
-        price: parseInt(match[4].replace(/\D/g, '')),
-        category: 'accessories',
-        url: `https://fril.jp/items/${match[1]}`
-      })
-    }
-    
-    console.log(`ラクマ爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('ラクマ爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchPaypayData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://paypayfleamarket.yahoo.co.jp/search?keyword=${encodeURIComponent(keyword)}&sort=sold`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    
-    const itemPattern = /data-item-id="(\d+)"[^>]*>[\s\S]*?class="[^"]*itemName[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g
-    let match
-    let rank = 1
-    
-    while ((match = itemPattern.exec(html)) !== null && rank <= 30) {
-      items.push({
-        rank: rank++,
-        itemId: match[1],
-        productName: match[2].trim(),
-        brand: 'OTHER',
-        price: parseInt(match[3].replace(/\D/g, '')),
-        category: 'accessories',
-        url: `https://paypayfleamarket.yahoo.co.jp/items/${match[1]}`
-      })
-    }
-    
-    console.log(`PayPayフリマ爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('PayPayフリマ爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchYahooShoppingData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://shopping.yahoo.co.jp/search?p=${encodeURIComponent(keyword)}&sort=sold`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      /class="[^"]*Product[^"]*_name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+,?\d*)\s*円/g,
-      /class="[^"]*Item[^"]*Name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+,?\d*)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const productName = match[1].trim()
-        if (!items.find(i => i.productName === productName)) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price: parseInt(match[2].replace(/\D/g, '')),
-            category: 'accessories',
-            url: ''
-          })
-        }
-      }
-    }
-    
-    console.log(`Yahoo!ショッピング爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('Yahoo!ショッピング爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchKakakuData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://kakaku.com/search_result/?category_key=13&keyword=${encodeURIComponent(keyword)}`
-    
-    const response = await fetch(url, {
-      headers: {
-        ...COMMON_HEADERS,
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      }
-    })
-    
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      /href="(\/item\/\d+\/)"[^>]*>[\s\S]*?class="[^\"]*itemName[^\"]*"[^>]*>([^<]+)<[\s\S]*?class="[^\"]*price[^\"]*"[^>]*>(\d[,\d]*)\s*円/g,
-      /class="[^\"]*p-item[^\"]*"[^>]*>[\s\S]*?href="(\/item\/\d+\/)"[^>]*>[\s\S]*?<span[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const url = match[1] || ''
-        const productName = match[2].trim()
-        const price = parseInt(match[3].replace(/\D/g, ''))
-        if (!items.find(i => i.productName === productName) && price > 0) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price,
-            category: 'accessories',
-            url: url ? `https://kakaku.com${url}` : ''
-          })
-        }
-      }
-    }
-    
-    console.log(`価格.com爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('価格.com爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchAmazonJPData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://www.amazon.co.jp/s?k=${encodeURIComponent(keyword)}&rh=p_89%3A&page=1`
-    
-    const response = await fetch(url, {
-      headers: {
-        ...COMMON_HEADERS,
-        'Cookie': 'session-id=147-1850366-9478737; session-id-time=2082787201l'
-      }
-    })
-    
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      /data-asin="([^"]+)"[^>]*>[\s\S]*?class="a-size-base-plus[^"]*"[^>]*>([^<]+)<[\s\S]*?class="a-price-whole"[^>]*>(\d[,\d]*)/g,
-      /class="[^']*s-result-item[^']*"[^>]*>[\s\S]*?data-asin="([^"]+)"[\s\S]*?class="[^"]*a-text-normal[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*a-price-whole[^"]*"[^>]*>(\d+)/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const asin = match[1]
-        const productName = match[2].trim()
-        if (!items.find(i => i.productName === productName)) {
-          items.push({
-            rank: rank++,
-            asin,
-            productName,
-            brand: 'OTHER',
-            price: parseInt(match[3].replace(/\D/g, '')),
-            category: 'accessories',
-            url: `https://www.amazon.co.jp/dp/${asin}`
-          })
-        }
-      }
-    }
-    
-    console.log(`Amazon.co.jp爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('Amazon.co.jp爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchQoo10Data = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://www.qoo10.jp/s/${encodeURIComponent(keyword)}`
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept': 'text/html',
-        'Accept-Language': 'ja'
-      }
-    })
-    
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      /class="[^"]*goods[^"]*"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g,
-      /item\/(\d+)"[^>]*>[\s\S]*?class="[^"]* goods_name[^"]*"[^>]*>([^<]+)<[\s\S]*?>(\d+)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const productName = match[1].trim()
-        if (!items.find(i => i.productName === productName)) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price: parseInt(match[2].replace(/\D/g, '')),
-            category: 'accessories',
-            url: ''
-          })
-        }
-      }
-    }
-    
-    console.log(`Qoo10爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('Qoo10爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchDMMData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://search.dmm.co.jp/search?keyword=${encodeURIComponent(keyword)}`
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept': 'text/html',
-        'Accept-Language': 'ja'
-      }
-    })
-    
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const pattern = /class="[^"]*DMM[^"]*item[^"]*"[^>]*>[\s\S]*?class="[^"]*title[^"]*"[^>]*>([^<]+)<[\s\S]*?class="[^"]*price[^"]*"[^>]*>(\d+,?\d*)/g
-    let match
-    
-    while ((match = pattern.exec(html)) !== null && rank <= 30) {
-      const productName = match[1].trim()
-      if (!items.find(i => i.productName === productName)) {
-        items.push({
-          rank: rank++,
-          productName,
-          brand: 'OTHER',
-          price: parseInt(match[2].replace(/\D/g, '')),
-          category: 'accessories',
-          url: ''
-        })
-      }
-    }
-    
-    console.log(`DMM爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('DMM爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchRakutenData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://search.rakuten.co.jp/search/mall/${encodeURIComponent(keyword)}/?s=2`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      new RegExp('href="(//item\\.rakuten\\.co\\.jp/\\d+/)"[^>]*>[\\s\\S]*?class="[^\"]*title[^\"]*"[^>]*>([^<]+)<[\\s\\S]*?class="[^\"]*price[^\"]*"[^>]*>(\\d[,\\d]*)"', 'g'),
-      /data-item-id="([^"]+)"[^>]*>[\s\S]*?class="[^"]*item-name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const url = match[1] || ''
-        const productName = match[2].trim()
-        const price = parseInt(match[3].replace(/\D/g, ''))
-        if (!items.find(i => i.productName === productName) && price > 0) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price,
-            category: 'accessories',
-            url: url ? `https:${url}` : ''
-          })
-        }
-      }
-    }
-    
-    console.log(`樂天爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('樂天爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchMercariData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}&sort= sold_count:desc`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      new RegExp('href="(/item/m\d+)"[^>]*>[\s\S]*?class="[^"]*name[^"]*"[^>]*>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円', 'g'),
-      /data-item-id="([^"]+)"[^>]*>[\s\S]*?>([^<]+)<[\s\S]*?(\d[,\d]*)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const url = match[1] || ''
-        const productName = match[2].trim()
-        const price = parseInt(match[3].replace(/\D/g, ''))
-        if (!items.find(i => i.productName === productName) && price > 0) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price,
-            category: 'accessories',
-            url: url ? `https://jp.mercari.com${url}` : ''
-          })
-        }
-      }
-    }
-    
-    console.log(`Mercari爬取: 获取${items.length}条数据`)
-    return items
-  } catch (error) {
-    console.error('Mercari爬取失败:', error.message)
-    return []
-  }
-}
-
-const fetchYahooAuctionData = async (keyword = 'アクセサリー') => {
-  try {
-    const url = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}&n=30&s=jun`
-    const response = await fetch(url, { headers: COMMON_HEADERS })
-    const html = await response.text()
-    const items = []
-    let rank = 1
-    
-    const patterns = [
-      /href="(\/item\/[^"]+)"[^>]*>[\s\S]*?<span[^>]*class="Product__price[^>]*>(\d[,\d]*)/g,
-      /href="(https?:\/\/auctions\.yahoo\.co\.jp\/item\/[^"]+)"[^>]*>[\s\S]*?>(\d[,\d]*)\s*円/g,
-      /class="Product__titleLink"[^>]*href="([^"]+)"[^>]*>([^<]+)<[\s\S]*?class="Product__price"[^>]*>(\d[,\d]*)/g,
-      /href="(\/item\/[^"]+)"[^>]*>[\s\S]*?>(\d[,\d]*)\s*円/g
-    ]
-    
-    for (const pattern of patterns) {
-      let match
-      while ((match = pattern.exec(html)) !== null && rank <= 30) {
-        const url = match[1] || ''
-        const productName = match[2]?.trim() || ''
-        const price = parseInt((match[3] || match[2]).replace(/\D/g, ''))
-        if (!items.find(i => i.productName === productName) && price > 0) {
-          items.push({
-            rank: rank++,
-            productName,
-            brand: 'OTHER',
-            price,
-            category: 'accessories',
-            url: url ? `https:${url}` : ''
-          })
-        }
-      }
-    }
-    
-    console.log(`Yahoo!拍賣爬取: 获取${items.length}条数据`)
-    return { items, html }
-  } catch (error) {
-    console.error('Yahoo!拍賣爬取失败:', error.message)
-    return { items: [], html: '' }
   }
 }
 
@@ -836,7 +379,8 @@ const EBAY_CONFIG = {
     browseApi: 'https://api.sandbox.ebay.com/buy/browse/v1'
   }
 }
-const EBAY_ENV = process.env.EBAY_ENV === 'production' ? 'production' : 'production' // 默认 production
+// 使用配置替代硬编码
+const EBAY_ENV = config.ebay.env
 const ebayConfig = EBAY_CONFIG[EBAY_ENV]
 
 // Token 缓存
@@ -848,8 +392,9 @@ const getEbayAccessToken = async () => {
   if (ebayCachedToken && Date.now() < ebayTokenExpiry) {
     return ebayCachedToken
   }
-  const clientId = process.env.EBAY_APP_ID || process.env.EBAY_API_KEY
-  const clientSecret = process.env.EBAY_CERT_ID
+  // 使用配置替代环境变量
+  const clientId = config.ebay.appId
+  const clientSecret = config.ebay.certId
   if (!clientId || !clientSecret) {
     throw new Error('缺少 eBay OAuth 凭证，请在 .env 中设置 EBAY_APP_ID 和 EBAY_CERT_ID')
   }
@@ -1484,35 +1029,22 @@ app.post('/api/ebay/refresh/:month', async (req, res) => {
 
 
 const callChatAPI = async (provider, messages) => {
-  const configs = {
-    glm: {
-      url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-      apiKey: process.env.GLM_API_KEY,
-      model: 'glm-4-flash',
-      errorKey: 'GLM_API_KEY未配置，请在.env中设置'
-    },
-    groq: {
-      url: 'https://api.groq.com/openai/v1/chat/completions',
-      apiKey: process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY,
-      model: 'llama-3.3-70b-versatile',
-      errorKey: 'GROQ_API_KEY未配置'
-    }
+  // 使用配置文件中的 API 配置
+  const providerConfig = config.getApiProviderConfig(provider)
+  
+  if (!providerConfig.apiKey) {
+    throw new Error(providerConfig.errorMessage)
   }
   
-  const config = configs[provider]
-  if (!config.apiKey) {
-    throw new Error(config.errorKey)
-  }
-  
-  const response = await fetch(config.url, {
+  const response = await fetch(providerConfig.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`
+      'Authorization': `Bearer ${providerConfig.apiKey}`
     },
     body: JSON.stringify({
-      model: config.model,
-      max_tokens: 1000,
+      model: providerConfig.model,
+      max_tokens: config.chat.maxTokens,
       messages: messages
     })
   })
@@ -1656,7 +1188,8 @@ const extractCategoryByAI = async (query, availableCategories) => {
     return null
   }
   
-  const provider = process.env.CHAT_API_PROVIDER || 'glm'
+  // 使用配置替代硬编码
+  const provider = config.chat.defaultProvider
   
   const prompt = `你是一个珠宝品类识别助手。根据用户的问题，从以下可选品类中选择最匹配的一个品类。
 
@@ -1797,7 +1330,8 @@ const handleChatWithProducts = async (req, res) => {
       productContext = '\n\n【注意】当前库存中没有找到完全匹配的产品，请根据用户需求提供一般性建议，并告知可以记录需求或推荐相似品类。'
     }
     
-    const provider = process.env.CHAT_API_PROVIDER || 'glm'
+    // 使用配置替代硬编码
+    const provider = config.chat.defaultProvider
     const apiMessages = [
       { 
         role: 'system', 

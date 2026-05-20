@@ -1,0 +1,19 @@
+# AI API 配置
+providers:
+  glm:
+    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    model: "glm-4-flash"
+    api_key_env: "GLM_API_KEY"
+    error_message: "GLM_API_KEY未配置，请在.env中设置"
+  
+  groq:
+    url: "https://api.groq.com/openai/v1/chat/completions"
+    model: "llama-3.3-70b-versatile"
+    api_key_env: "GROQ_API_KEY"
+    fallback_env: "VITE_GROQ_API_KEY"
+    error_message: "GROQ_API_KEY未配置"
+
+# Embedding 服务配置
+embedding:
+  model: "text-embedding-3-small"
+  dimensions: 384
