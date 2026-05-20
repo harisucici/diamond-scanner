@@ -1645,13 +1645,99 @@ const extractKeywords = (text) => {
  * 语义搜索所有 profile (LanceDB)
  * 搜索 products_vectors 表中的所有产品
  */
+/**
+ * 使用 AI 判断用户查询中的品类
+ * @param {string} query - 用户查询
+ * @param {string[]} availableCategories - 数据库中可用的品类列表
+ * @returns {Promise<string|null>} - 匹配的数据库品类名称
+ */
+const extractCategoryByAI = async (query, availableCategories) => {
+  if (!availableCategories || availableCategories.length === 0) {
+    return null
+  }
+  
+  const provider = process.env.CHAT_API_PROVIDER || 'glm'
+  
+  const prompt = `你是一个珠宝品类识别助手。根据用户的问题，从以下可选品类中选择最匹配的一个品类。
+
+【可选品类列表】
+${availableCategories.join('\n')}
+
+【用户问题】
+${query}
+
+【回答要求】
+1. 只返回一个品类名称，必须从可选品类列表中选择
+2. 如果用户问题中没有明确指向某个品类，或无法确定，返回 "null"
+3. 不要返回任何解释，只返回品类名称或 null
+
+示例：
+用户问"有什么戒指推荐" → 返回: 指輪・リング
+用户问"推荐一些珠宝" → 返回: null
+用户问"项链多少钱" → 返回: ネックレス・チョーカー`
+
+  try {
+    const result = await callChatAPI(provider, [
+      { role: 'user', content: prompt }
+    ])
+    
+    const category = result.reply.trim()
+    
+    // 验证返回的品类是否在可用列表中
+    if (category === 'null' || !availableCategories.includes(category)) {
+      console.log(`🤖 AI 品类判断: 未匹配到明确品类`)
+      return null
+    }
+    
+    console.log(`🤖 AI 品类判断: "${query}" → ${category}`)
+    return category
+  } catch (error) {
+    console.error('AI 品类判断失败:', error.message)
+    return null
+  }
+}
+
+// 缓存数据库中的品类列表
+let cachedCategories = null
+
+/**
+ * 获取数据库中所有可用的品类
+ */
+const getAvailableCategories = async () => {
+  if (cachedCategories) {
+    return cachedCategories
+  }
+  
+  try {
+    const table = await getTable(TABLES.PRODUCTS_VECTORS)
+    const results = await table.query().limit(1000).toArray()
+    cachedCategories = [...new Set(results.map(r => r.category).filter(Boolean))]
+    console.log(`📊 数据库品类: ${cachedCategories.join(', ')}`)
+    return cachedCategories
+  } catch (error) {
+    console.error('获取品类列表失败:', error.message)
+    return []
+  }
+}
+
 const semanticSearchAllProfiles = async (query, limit = 10) => {
   try {
     // 生成查询向量
     const queryVector = await generateEmbedding(query)
     
+    // 使用 AI 判断品类
+    const availableCategories = await getAvailableCategories()
+    const category = await extractCategoryByAI(query, availableCategories)
+    let filter = null
+    
+    if (category) {
+      // LanceDB filter 语法
+      filter = `category = '${category}'`
+      console.log(`🏷️ 检测到品类: ${category}，应用过滤条件`)
+    }
+    
     // 执行向量搜索 - 搜索所有产品（不限制平台）
-    const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, limit * 3)
+    const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, limit * 3, filter)
     
     // 解析 metadata、计算相似度、并移除大字段
     const parsedResults = results.map(r => {
