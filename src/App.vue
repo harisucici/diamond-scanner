@@ -29,11 +29,8 @@
       <!-- 配饰销量排行榜页面 -->
       <NecklaceSales v-if="currentPage === 'sales'" />
 
-      <!-- 宝石数据获取页面 -->
-      <GemstoneFetcher v-else-if="currentPage === 'gemstone'" />
-
       <footer class="main-footer">
-        <p>日本配饰销量排行 v1.1 | 💎 宝石数据获取</p>
+        <p>日本配饰销量排行 v1.1</p>
       </footer>
       
       <!-- 珠宝顾问组件 -->
@@ -45,7 +42,6 @@
 <script>
 import { ref, onMounted } from 'vue'
 import NecklaceSales from './pages/NecklaceSales.vue'
-import GemstoneFetcher from './pages/GemstoneFetcher.vue'
 import LoginPage from './pages/LoginPage.vue'
 import JewelryAgent from './components/JewelryAgent.vue'
 
@@ -53,7 +49,6 @@ export default {
   name: 'App',
   components: {
     NecklaceSales,
-    GemstoneFetcher,
     LoginPage,
     JewelryAgent
   },
