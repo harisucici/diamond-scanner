@@ -9,7 +9,8 @@ import { dirname, join } from 'path'
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
-import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData } from './db/lancedb.js'
+import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, TABLES } from './db/lancedb.js'
+import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1905,6 +1906,49 @@ const extractKeywords = (text) => {
   return [...new Set(keywords)]
 }
 
+/**
+ * 语义搜索所有 profile (LanceDB)
+ * 搜索 products_vectors 表中的所有产品
+ */
+const semanticSearchAllProfiles = async (query, limit = 10) => {
+  try {
+    // 生成查询向量
+    const queryVector = await generateEmbedding(query)
+    
+    // 执行向量搜索 - 搜索所有产品（不限制平台）
+    const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, limit * 3)
+    
+    // 解析 metadata、计算相似度、并移除大字段
+    const parsedResults = results.map(r => {
+      const { name_vector, ...rest } = r
+      return {
+        ...rest,
+        metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
+        similarity: cosineSimilarity(queryVector, name_vector)
+      }
+    })
+    
+    // 按相似度排序并限制数量
+    parsedResults.sort((a, b) => b.similarity - a.similarity)
+    
+    // 转换为前端期望的格式
+    return parsedResults.slice(0, limit).map(p => ({
+      id: p.id,
+      productName: p.product_name,
+      brand: p.brand,
+      price: p.price ? `${p.currency || '¥'} ${p.price.toLocaleString()}` : '价格未定',
+      source: p.platform || '未知',
+      url: p.url,
+      image: p.image_url,
+      category: p.category,
+      similarity: p.similarity
+    }))
+  } catch (error) {
+    console.error('语义搜索失败:', error.message)
+    return []
+  }
+}
+
 const handleChatWithProducts = async (req, res) => {
   try {
     const { messages } = req.body
@@ -1916,17 +1960,17 @@ const handleChatWithProducts = async (req, res) => {
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')
     let products = []
     
+    // 使用语义搜索替代关键词搜索
     if (lastUserMessage) {
-      const keywords = extractKeywords(lastUserMessage.content)
-      if (keywords.length > 0) {
-        products = searchAllProducts(keywords[0], 5)
-      }
+      // 直接使用用户的问题进行语义搜索
+      products = await semanticSearchAllProfiles(lastUserMessage.content, 5)
+      console.log(`🔍 语义搜索找到 ${products.length} 个相关产品`)
     }
     
     let productContext = ''
     if (products.length > 0) {
-      productContext = '\n\n【重要：当前库存中的相关产品】\n以下是系统从库存中为您匹配的产品，你必须在回答中只从这些产品中选择推荐，不可编造其他产品：\n\n' + products.map((p, i) => 
-        `${i + 1}. 【${p.brand}】${p.productName}\n   价格: ${p.price}\n   来源: ${p.source}\n   ${p.url ? `链接: ${p.url}` : '(暂无链接)'}`
+      productContext = '\n\n【重要：当前库存中的相关产品】\n以下是系统通过语义搜索从所有品类中为您匹配的产品，你必须在回答中只从这些产品中选择推荐，不可编造其他产品：\n\n' + products.map((p, i) => 
+        `${i + 1}. 【${p.brand}】${p.productName}\n   价格: ${p.price}\n   来源: ${p.source}\n   相似度: ${(p.similarity * 100).toFixed(1)}%\n   ${p.url ? `链接: ${p.url}` : '(暂无链接)'}`
       ).join('\n\n')
     } else {
       productContext = '\n\n【注意】当前库存中没有找到完全匹配的产品，请根据用户需求提供一般性建议，并告知可以记录需求或推荐相似品类。'

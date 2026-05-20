@@ -403,11 +403,18 @@ export const vectorSearch = async (tableName, queryVector, limit = 10, filter = 
   
   const results = await query.toArray()
   
-  // Convert BigInt to Number for JSON serialization
+  // Convert BigInt to Number and Vector to Array for JSON serialization
   return results.map(row => {
     const converted = {}
     for (const [key, value] of Object.entries(row)) {
-      converted[key] = typeof value === 'bigint' ? Number(value) : value
+      if (typeof value === 'bigint') {
+        converted[key] = Number(value)
+      } else if (value && typeof value === 'object' && value.constructor?.name === 'Vector') {
+        // LanceDB returns vectors as Vector type objects, need to convert to array
+        converted[key] = Array.from(value)
+      } else {
+        converted[key] = value
+      }
     }
     return converted
   })

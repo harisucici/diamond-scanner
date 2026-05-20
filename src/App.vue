@@ -22,12 +22,6 @@
           >
             💎 宝石数据
           </button>
-          <button 
-            :class="['nav-tab', { active: currentPage === 'semantic' }]" 
-            @click="currentPage = 'semantic'"
-          >
-            🔍 语义搜索
-          </button>
         </div>
         <button class="logout-btn" @click="handleLogout">退出</button>
       </nav>
@@ -37,9 +31,6 @@
 
       <!-- 宝石数据获取页面 -->
       <GemstoneFetcher v-else-if="currentPage === 'gemstone'" />
-      
-      <!-- 语义搜索页面 -->
-      <SemanticSearch v-else-if="currentPage === 'semantic'" />
 
       <footer class="main-footer">
         <p>日本配饰销量排行 v1.1 | 💎 宝石数据获取</p>
@@ -57,7 +48,6 @@ import NecklaceSales from './pages/NecklaceSales.vue'
 import GemstoneFetcher from './pages/GemstoneFetcher.vue'
 import LoginPage from './pages/LoginPage.vue'
 import JewelryAgent from './components/JewelryAgent.vue'
-import SemanticSearch from './components/SemanticSearch.vue'
 
 export default {
   name: 'App',
@@ -65,8 +55,7 @@ export default {
     NecklaceSales,
     GemstoneFetcher,
     LoginPage,
-    JewelryAgent,
-    SemanticSearch
+    JewelryAgent
   },
   setup() {
     const isLoggedIn = ref(false)

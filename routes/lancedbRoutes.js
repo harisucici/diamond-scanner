@@ -91,12 +91,15 @@ router.post('/search/semantic', async (req, res) => {
     const searchLimit = detectedCategory ? limit * 5 : limit
     const results = await vectorSearch(TABLES.PRODUCTS_VECTORS, queryVector, searchLimit, filter)
     
-    // 解析 metadata 并过滤类别
-    let parsedResults = results.map(r => ({
-      ...r,
-      metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
-      similarity: cosineSimilarity(queryVector, r.name_vector)
-    }))
+    // 解析 metadata、计算相似度、并移除大字段
+    let parsedResults = results.map(r => {
+      const { name_vector, ...rest } = r // 移除 name_vector 以减少响应大小
+      return {
+        ...rest,
+        metadata: typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata,
+        similarity: cosineSimilarity(queryVector, name_vector)
+      }
+    })
     
     // 如果检测到类别，进行过滤
     if (detectedCategory) {
