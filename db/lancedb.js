@@ -67,7 +67,9 @@ export const TABLES = {
   KAKAKU_PRODUCTS: 'kakaku_products',
   RAKUTEN_PRODUCTS: 'rakuten_products',
   MERCARI_PRODUCTS: 'mercari_products',
-  YAHOO_AUCTION_PRODUCTS: 'yahoo_auction_products'
+  YAHOO_AUCTION_PRODUCTS: 'yahoo_auction_products',
+  FASHIONPHILE_PRODUCTS: 'fashionphile_products',
+  EBAY_PRODUCTS: 'ebay_products'
 }
 
 let db = null
@@ -358,6 +360,45 @@ const SCHEMAS = {
     name_vector: createEmptyVector(),
     search_text: 'sample',
     created_at: new Date().toISOString()
+  }],
+  
+  [TABLES.FASHIONPHILE_PRODUCTS]: () => [{
+    id: 'sample_0',
+    rank: 0,
+    month: '2025-01',
+    productName: 'sample',
+    brand: 'sample',
+    price: 0,
+    currency: 'USD',
+    condition: '',
+    imageUrl: '',
+    url: '',
+    productType: '',
+    collection: '',
+    name_vector: createEmptyVector(),
+    search_text: 'sample',
+    created_at: new Date().toISOString()
+  }],
+  
+  [TABLES.EBAY_PRODUCTS]: () => [{
+    id: 'sample_0',
+    rank: 0,
+    month: '2025-01',
+    productName: 'sample',
+    brand: 'sample',
+    price: 0,
+    currency: 'USD',
+    condition: '',
+    imageUrl: '',
+    url: '',
+    itemId: '',
+    seller: '',
+    sellerLocation: '',
+    country: '',
+    category: '',
+    name_vector: createEmptyVector(),
+    search_text: 'sample',
+    created_at: new Date().toISOString()
   }]
 }
 
@@ -470,12 +511,26 @@ export const insertData = async (tableName, data) => {
 /**
  * 删除数据
  * @param {string} tableName - 表名
- * @param {string} filter - 删除条件
+ * @param {string|object} filter - 删除条件 (字符串或对象)
  */
 export const deleteData = async (tableName, filter) => {
   const table = await getTable(tableName)
-  await table.delete(filter)
-  console.log(`🗑️ 从 ${tableName} 删除数据: ${filter}`)
+  
+  // 如果 filter 是对象，转换为 SQL 字符串
+  let filterStr = filter
+  if (typeof filter === 'object' && filter !== null) {
+    const conditions = Object.entries(filter).map(([key, value]) => {
+      if (typeof value === 'string') {
+        return `${key} = '${value}'`
+      } else {
+        return `${key} = ${value}`
+      }
+    })
+    filterStr = conditions.join(' AND ')
+  }
+  
+  await table.delete(filterStr)
+  console.log(`🗑️ 从 ${tableName} 删除数据: ${filterStr}`)
 }
 
 /**

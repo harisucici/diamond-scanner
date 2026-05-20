@@ -11,6 +11,7 @@ import cron from 'node-cron'
 import yaml from 'js-yaml'
 import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, TABLES } from './db/lancedb.js'
 import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
+import { detectLanguage, getI18nText, i18n } from './services/langDetect.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
 // 加载统一配置
 import * as config from './config/index.js'
@@ -41,6 +42,13 @@ const getProxyAgent = async () => {
 
 const app = express()
 const PORT = config.app.port
+
+// 通用请求头
+const COMMON_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9,ja;q=0.7'
+}
 
 app.use(cors())
 app.use(express.json())
@@ -1191,23 +1199,10 @@ const extractCategoryByAI = async (query, availableCategories) => {
   // 使用配置替代硬编码
   const provider = config.chat.defaultProvider
   
-  const prompt = `你是一个珠宝品类识别助手。根据用户的问题，从以下可选品类中选择最匹配的一个品类。
-
-【可选品类列表】
-${availableCategories.join('\n')}
-
-【用户问题】
-${query}
-
-【回答要求】
-1. 只返回一个品类名称，必须从可选品类列表中选择
-2. 如果用户问题中没有明确指向某个品类，或无法确定，返回 "null"
-3. 不要返回任何解释，只返回品类名称或 null
-
-示例：
-用户问"有什么戒指推荐" → 返回: 指輪・リング
-用户问"推荐一些珠宝" → 返回: null
-用户问"项链多少钱" → 返回: ネックレス・チョーカー`
+  // 检测用户语言，动态生成品类识别 prompt
+  const userLang = detectLanguage(query)
+  const promptFn = getI18nText(i18n.categoryPrompt, userLang)
+  const prompt = promptFn(availableCategories) + `\n\n【${userLang === 'zh' ? '用户问题' : userLang === 'ja' ? 'ユーザーの質問' : 'User Question'}】\n${query}`
 
   try {
     const result = await callChatAPI(provider, [
@@ -1314,6 +1309,10 @@ const handleChatWithProducts = async (req, res) => {
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')
     let products = []
     
+    // 检测用户语言
+    const userLang = lastUserMessage ? detectLanguage(lastUserMessage.content) : 'zh'
+    console.log(`🌐 检测到用户语言: ${userLang}`)
+    
     // 使用语义搜索替代关键词搜索
     if (lastUserMessage) {
       // 直接使用用户的问题进行语义搜索
@@ -1323,11 +1322,11 @@ const handleChatWithProducts = async (req, res) => {
     
     let productContext = ''
     if (products.length > 0) {
-      productContext = '\n\n【重要：当前库存中的相关产品】\n以下是系统通过语义搜索从所有品类中为您匹配的产品，你必须在回答中只从这些产品中选择推荐，不可编造其他产品：\n\n' + products.map((p, i) => 
-        `${i + 1}. 【${p.brand}】${p.productName}\n   价格: ${p.price}\n   来源: ${p.source}\n   相似度: ${(p.similarity * 100).toFixed(1)}%\n   ${p.url ? `链接: ${p.url}` : '(暂无链接)'}`
+      productContext = getI18nText(i18n.productContextHeader, userLang) + products.map((p, i) => 
+        `${i + 1}. 【${p.brand}】${p.productName}\n   ${userLang === 'zh' ? '价格' : userLang === 'ja' ? '価格' : 'Price'}: ${p.price}\n   ${userLang === 'zh' ? '来源' : userLang === 'ja' ? '出典' : 'Source'}: ${p.source}\n   ${userLang === 'zh' ? '相似度' : userLang === 'ja' ? '類似度' : 'Similarity'}: ${(p.similarity * 100).toFixed(1)}%\n   ${p.url ? (userLang === 'zh' ? `链接` : userLang === 'ja' ? `リンク` : `Link`) + `: ${p.url}` : (userLang === 'zh' ? '(暂无链接)' : userLang === 'ja' ? '(リンクなし)' : '(No link)')}`
       ).join('\n\n')
     } else {
-      productContext = '\n\n【注意】当前库存中没有找到完全匹配的产品，请根据用户需求提供一般性建议，并告知可以记录需求或推荐相似品类。'
+      productContext = getI18nText(i18n.noProductContext, userLang)
     }
     
     // 使用配置替代硬编码
@@ -1335,7 +1334,7 @@ const handleChatWithProducts = async (req, res) => {
     const apiMessages = [
       { 
         role: 'system', 
-        content: SYSTEM_PROMPT + productContext + '\n\n【回答要求】\n1. 根据用户需求，从上述产品列表中选择最合适的进行推荐\n2. 必须说明产品的品牌、名称、价格和来源\n3. 如果有购买链接，提醒用户点击产品卡片查看详情\n4. 如果没有合适产品，诚实告知并提供替代建议'
+        content: SYSTEM_PROMPT + productContext + getI18nText(i18n.answerRequirements, userLang)
       },
       ...messages.map(m => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',

@@ -291,13 +291,11 @@ export default {
                 url = `${source.api}?month=${selectedMonth.value}`
               }
             } else if (source.id === 'fashionphile') {
-              // Fashionphile 使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
+              // Fashionphile 使用选中的月份
+              url = `${source.api}?month=${selectedMonth.value}`
             } else if (source.id === 'ebay') {
-              // eBay 使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
+              // eBay 使用选中的月份
+              url = `${source.api}?month=${selectedMonth.value}`
             }
             
             const response = await fetch(url)
