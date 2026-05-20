@@ -12,6 +12,14 @@ build/
 # db/*.db
 !db/.gitkeep
 
+# LanceDB 数据文件（运行时生成，不应提交）
+lancedb/**/*.lance/
+lancedb/**/_transactions/
+lancedb/**/_versions/
+lancedb/**/_deletions/
+lancedb/**/data/
+!lancedb/.gitkeep
+
 # 如果数据库太大，使用以下策略：
 # 1. 小于 50MB: 直接提交到 Git
 # 2. 大于 50MB: 使用 Git LFS 或云存储
@@ -44,3 +52,7 @@ Thumbs.db
 # Temp files
 *.tmp
 *.temp
+
+# Debug files
+debug-*.js
+test-*.js
