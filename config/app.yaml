@@ -1,0 +1,19 @@
+# 应用基础配置
+app:
+  port: 3000
+  proxy_url: ""  # 可通过 HTTP_PROXY 环境变量覆盖
+
+# LanceDB 配置
+database:
+  lancedb_dir: "./lancedb"
+
+# eBay 配置
+ebay:
+  env: production
+  app_id: ""  # 通过 EBAY_APP_ID 环境变量设置
+  cert_id: "" # 通过 EBAY_CERT_ID 环境变量设置
+
+# AI API 提供者选择
+chat:
+  default_provider: glm  # glm 或 groq
+  max_tokens: 1000

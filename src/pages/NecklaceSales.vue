@@ -201,12 +201,11 @@ export default {
     const availableMonths = ref([])
     const categories = ref([])
 
-    // 数据源配置 (包含BUYMA、Fashionphile、Amazon宝石和eBay)
+    // 数据源配置 (包含BUYMA、Fashionphile和eBay)
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
       { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
-      { id: 'ebay', name: 'eBay', icon: '🔗', enabled: true, api: '/api/ebay' },
-      { id: 'amazon_gemstones', name: 'Amazon宝石', icon: '💠', enabled: true, api: '/api/amazon-gemstones' }
+      { id: 'ebay', name: 'eBay', icon: '🔗', enabled: true, api: '/api/ebay' }
     ])
 
     // 启用的数据源
@@ -215,8 +214,8 @@ export default {
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
       return Math.max(...data.value.map(item => {
-        // Fashionphile、Amazon宝石 和 eBay 用 price，其他用 sales
-        if (item._source === 'Fashionphile' || item._source === 'Amazon宝石' || item._source === 'eBay') {
+        // Fashionphile 和 eBay 用 price，其他用 sales
+        if (item._source === 'Fashionphile' || item._source === 'eBay') {
           return item.price || 0
         }
         return item.sales || 0
@@ -292,17 +291,11 @@ export default {
                 url = `${source.api}?month=${selectedMonth.value}`
               }
             } else if (source.id === 'fashionphile') {
-              // Fashionphile 使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
-            } else if (source.id === 'amazon_gemstones') {
-              // Amazon宝石使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
+              // Fashionphile 使用选中的月份
+              url = `${source.api}?month=${selectedMonth.value}`
             } else if (source.id === 'ebay') {
-              // eBay 使用当前月份
-              const currentMonth = new Date().toISOString().slice(0, 7)
-              url = `${source.api}?month=${currentMonth}`
+              // eBay 使用选中的月份
+              url = `${source.api}?month=${selectedMonth.value}`
             }
             
             const response = await fetch(url)
@@ -320,16 +313,6 @@ export default {
                 normalizedItem.currency = item.currency || 'USD'
                 normalizedItem.url = item.url
                 normalizedItem.image = item.imageUrl
-              } else if (source.id === 'amazon_gemstones') {
-                // Amazon宝石数据已经在API层面统一了字段
-                normalizedItem.productName = item.productName || item.title
-                normalizedItem.brand = item.brand || item.seller
-                normalizedItem.price = item.price
-                normalizedItem.currency = item.currency || 'USD'
-                normalizedItem.url = item.url
-                normalizedItem.image = item.image || item.imageUrl
-                normalizedItem.rating = item.rating
-                normalizedItem.reviews = item.reviews
               } else if (source.id === 'ebay') {
                 // eBay 数据统一字段
                 normalizedItem.productName = item.productName
@@ -353,9 +336,9 @@ export default {
         
         // 计算统计信息
         const totalRecords = allData.length
-        // BUYMA 用 sales，Fashionphile、Amazon宝石 和 eBay 用 price
+        // BUYMA 用 sales，Fashionphile 和 eBay 用 price
         const totalSales = allData.reduce((sum, item) => {
-          if (item._source === 'Fashionphile' || item._source === 'Amazon宝石' || item._source === 'eBay') {
+          if (item._source === 'Fashionphile' || item._source === 'eBay') {
             return sum + (item.price || 0)
           }
           return sum + (item.sales || 0)
@@ -393,15 +376,6 @@ export default {
         months.forEach(m => allMonths.add(m))
       } catch (error) {
         console.error('加载Fashionphile月份失败:', error)
-      }
-      
-      // 尝试获取 Amazon宝石 月份
-      try {
-        const response = await fetch('/api/amazon-gemstones/months')
-        const months = await response.json()
-        months.forEach(m => allMonths.add(m))
-      } catch (error) {
-        console.error('加载Amazon宝石月份失败:', error)
       }
       
       // 尝试获取 eBay 月份
@@ -445,9 +419,6 @@ export default {
               refreshMonthValue = selectedMonth.value
               refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             } else if (source.id === 'fashionphile') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'amazon_gemstones') {
               refreshMonthValue = currentMonth
               refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             } else if (source.id === 'ebay') {
