@@ -412,6 +412,9 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
+      // 保存旧数据，刷新过程中保持页面有内容
+      const oldData = [...(data.value || [])]
+      
       // 确定刷新用的月份 — 所有数据源统一使用当前月份
       const currentMonth = new Date().toISOString().slice(0, 7)
       
@@ -466,9 +469,20 @@ export default {
           }
         }
         
+        // 刷新完成，等待后端数据完全准备好
+        await new Promise(resolve => setTimeout(resolve, 300))
         await loadData()
+        
+        // 验证数据是否加载成功，如果为空则重试一次
+        if (!data.value || data.value.length === 0) {
+          console.warn('刷新后数据为空，重试加载...')
+          await new Promise(resolve => setTimeout(resolve, 500))
+          await loadData()
+        }
       } catch (error) {
         console.error('刷新数据失败:', error)
+        // 如果刷新失败，恢复旧数据
+        data.value = oldData
       } finally {
         refreshing.value = false
       }
