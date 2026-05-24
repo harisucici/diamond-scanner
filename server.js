@@ -1463,37 +1463,59 @@ const annotateImage = async (imageBase64, analysisText) => {
   const scriptPath = join(__dirname, 'scripts', 'annotate_risks.py')
 
   if (!fs.existsSync(scriptPath)) {
-    console.log('Annotation script not found, returning original image')
+    console.log('[annotateImage] Script not found:', scriptPath)
     return imageBase64
   }
 
-  // Escape strings for safe shell passing
-  const escapedImage = imageBase64.replace(/'/g, "'\\''")
-  const escapedAnalysis = analysisText.replace(/'/g, "'\\''")
+  // Use temp files instead of command-line args (avoids shell arg length limits)
+  const tmpDir = join(__dirname, 'tmp')
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
-  const cmd = `python3 '${scriptPath}' --image '${escapedImage}' --analysis '${escapedAnalysis}'`
+  const imageFile = join(tmpDir, `cad_input_${Date.now()}.b64`)
+  const analysisFile = join(tmpDir, `cad_analysis_${Date.now()}.txt`)
+  const outputFile = join(tmpDir, `cad_output_${Date.now()}.b64`)
 
   try {
+    // Write input files
+    fs.writeFileSync(imageFile, imageBase64, 'utf-8')
+    fs.writeFileSync(analysisFile, analysisText, 'utf-8')
+
+    const cmd = `python3 '${scriptPath}' --image-file '${imageFile}' --analysis-file '${analysisFile}' --output '${outputFile}'`
+    console.log('[annotateImage] Running:', cmd)
+
     const { stdout, stderr } = await execAsync(cmd, {
-      maxBuffer: 50 * 1024 * 1024,  // 50MB buffer for large images
-      timeout: 30000  // 30 second timeout
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 30000,
+      cwd: __dirname
     })
 
-    if (stderr && stderr.includes('ModuleNotFoundError')) {
-      console.log('Pillow not available, returning original image')
-      return imageBase64
+    if (stderr) {
+      console.log('[annotateImage] stderr:', stderr.substring(0, 500))
     }
 
-    const annotatedBase64 = stdout.trim()
-    if (annotatedBase64 && annotatedBase64.length > 100) {
-      console.log('Image annotation successful')
-      return annotatedBase64
+    // Read output from file
+    if (fs.existsSync(outputFile)) {
+      const result = fs.readFileSync(outputFile, 'utf-8').trim()
+      if (result.length > 100) {
+        console.log('[annotateImage] Success, output length:', result.length)
+        return result
+      }
+      console.log('[annotateImage] Output too short, returning original')
+    } else {
+      console.log('[annotateImage] Output file not created')
     }
 
     return imageBase64
   } catch (err) {
-    console.log('Annotation failed, returning original image:', err.message)
+    console.log('[annotateImage] Error:', err.message)
     return imageBase64
+  } finally {
+    // Clean up temp files
+    try {
+      if (fs.existsSync(imageFile)) fs.unlinkSync(imageFile)
+      if (fs.existsSync(analysisFile)) fs.unlinkSync(analysisFile)
+      if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile)
+    } catch (e) { /* ignore cleanup errors */ }
   }
 }
 

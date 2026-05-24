@@ -319,18 +319,44 @@ def annotate_image(image_base64: str, risk_items: list, output_format: str = "pn
 
 def main():
     parser = argparse.ArgumentParser(description="Annotate CAD image with risk markers")
-    parser.add_argument("--image", required=True, help="Base64 encoded image")
-    parser.add_argument("--analysis", required=True, help="AI analysis text")
-    parser.add_argument("--output", help="Output file for base64 result (optional, prints to stdout if not specified)")
+
+    # Command-line args (legacy, for backwards compatibility)
+    parser.add_argument("--image", help="Base64 encoded image (inline)")
+    parser.add_argument("--analysis", help="AI analysis text (inline)")
+
+    # File-based args (preferred, avoids shell arg length limits)
+    parser.add_argument("--image-file", help="Path to file containing base64 image")
+    parser.add_argument("--analysis-file", help="Path to file containing analysis text")
+
+    parser.add_argument("--output", help="Output file for base64 result (required for file mode)")
     parser.add_argument("--format", default="png", choices=["png", "jpeg"], help="Output image format")
 
     args = parser.parse_args()
 
+    # Read inputs (prefer file-based, fall back to inline)
+    if args.image_file:
+        with open(args.image_file, 'r') as f:
+            image_b64 = f.read().strip()
+    elif args.image:
+        image_b64 = args.image
+    else:
+        print("Error: --image or --image-file required", file=sys.stderr)
+        sys.exit(1)
+
+    if args.analysis_file:
+        with open(args.analysis_file, 'r') as f:
+            analysis_text = f.read()
+    elif args.analysis:
+        analysis_text = args.analysis
+    else:
+        print("Error: --analysis or --analysis-file required", file=sys.stderr)
+        sys.exit(1)
+
     # Parse risk items from analysis text
-    risk_items = parse_risk_items(args.analysis)
+    risk_items = parse_risk_items(analysis_text)
 
     # Annotate image
-    result_b64 = annotate_image(args.image, risk_items, args.format)
+    result_b64 = annotate_image(image_b64, risk_items, args.format)
 
     if args.output:
         with open(args.output, "w") as f:

@@ -52,6 +52,7 @@ Thumbs.db
 # Temp files
 *.tmp
 *.temp
+tmp/
 
 # Debug files
 debug-*.js
