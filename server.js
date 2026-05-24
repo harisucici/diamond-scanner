@@ -700,6 +700,7 @@ app.post('/api/necklaces/refresh/:month', async (req, res) => {
       month,
       dataSource: 'BUYMA真实数据',
       count: insertedCount,
+      items: await queryData('necklaces', `month = '${month}'`, 1000),
       updatedAt: now
     })
   } catch (error) {
