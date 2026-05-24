@@ -122,36 +122,45 @@
           <p class="risk-desc">{{ risk.description }}</p>
           <div class="feedback-actions">
             <button
+              v-if="!risk.submitted"
               class="btn btn-agree"
-              :class="{ selected: risk.feedback === 'agree', submitting: risk.submitting }"
+              :class="{ submitting: risk.submitting }"
               :disabled="risk.submitting"
               @click="setFeedback(index, 'agree')"
             >
               <span v-if="risk.submitting">⏳</span>
-              <span v-else-if="risk.submitted">✅</span>
               <span v-else>✅ 同意分析</span>
             </button>
             <button
+              v-if="!risk.submitted && risk.feedback !== 'correct'"
               class="btn btn-correct"
-              :class="{ selected: risk.feedback === 'correct' }"
               @click="setFeedback(index, 'correct')"
             >
               ✏️ 需要修正
             </button>
-            <div v-if="risk.feedback === 'correct'" class="correction-input">
-              <textarea
-                v-model="risk.correction"
-                placeholder="请输入正确的分析结果..."
-                rows="2"
-              ></textarea>
-              <button
-                class="btn btn-sm"
-                :disabled="!risk.correction.trim() || risk.submitting"
-                @click="submitCorrection(index)"
-              >
-                {{ risk.submitting ? '提交中...' : '提交修正' }}
-              </button>
-            </div>
+            <template v-if="risk.feedback === 'correct' && !risk.submitted">
+              <div class="correction-input">
+                <textarea
+                  v-model="risk.correction"
+                  placeholder="请输入正确的分析结果..."
+                  rows="2"
+                ></textarea>
+                <button
+                  class="btn btn-sm"
+                  :disabled="!risk.correction.trim() || risk.submitting"
+                  @click="submitCorrection(index)"
+                >
+                  {{ risk.submitting ? '提交中...' : '提交修正' }}
+                </button>
+              </div>
+            </template>
+            <button
+              v-if="risk.submitted"
+              class="btn btn-agree submitted"
+              disabled
+            >
+              ✅ 已处理
+            </button>
           </div>
         </div>
 
