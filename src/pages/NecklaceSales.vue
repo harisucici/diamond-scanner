@@ -273,6 +273,11 @@ export default {
     const loadData = async () => {
       loading.value = true
       try {
+        // 如果 selectedMonth 为空，使用当前月份作为兜底
+        if (!selectedMonth.value || selectedMonth.value.trim() === '') {
+          selectedMonth.value = new Date().toISOString().slice(0, 7)
+        }
+        
         // 加载品类列表 (只有 BUYMA 有品类)
         await loadCategories()
         
@@ -387,10 +392,14 @@ export default {
         console.error('加载eBay月份失败:', error)
       }
       
-      availableMonths.value = Array.from(allMonths).sort().reverse()
+      availableMonths.value = Array.from(allMonths)
+        .filter(m => m && m.trim() !== '')
+        .sort()
+        .reverse()
       
-      // 默认选中最新月份
-      selectedMonth.value = availableMonths.value[0] || ''
+      // 默认选中最新月份，如果没有数据则使用当前月份
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      selectedMonth.value = availableMonths.value[0] || currentMonth
       
       await loadData()
     }
@@ -403,28 +412,22 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
-      // 确定刷新用的月份
+      // 确定刷新用的月份 — 所有数据源统一使用当前月份
       const currentMonth = new Date().toISOString().slice(0, 7)
+      
+      // 确保 selectedMonth 有值，避免刷新后查询空月份
+      if (!selectedMonth.value || selectedMonth.value.trim() === '') {
+        selectedMonth.value = currentMonth
+      }
       
       try {
         // 刷新所有启用的数据源
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            // 不同数据源使用不同月份策略
-            let refreshMonthValue = selectedMonth.value
-            let refreshUrl = ''
-            
-            if (source.id === 'buyma') {
-              refreshMonthValue = selectedMonth.value
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'fashionphile') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'ebay') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            }
+            // 所有数据源统一使用 currentMonth
+            const refreshMonthValue = currentMonth
+            const refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             
             const response = await fetch(refreshUrl, {
               method: 'POST'
