@@ -190,10 +190,13 @@ def annotate_image(image_base64: str, risk_items: list, output_format: str = "pn
 
         # 1. Try project-bundled font (works on any platform including Render)
         project_font = join(__dir__, 'assets', 'fonts', 'NotoSansSC-Regular.otf')
+        print(f'[annotate] Trying project font: {project_font}', file=sys.stderr)
+        print(f'[annotate] Font exists: {os.path.exists(project_font)}', file=sys.stderr)
         try:
             font = ImageFont.truetype(project_font, font_size_val)
-        except (IOError, OSError):
-            pass
+            print(f'[annotate] Project font loaded OK', file=sys.stderr)
+        except (IOError, OSError) as e:
+            print(f'[annotate] Project font failed: {e}', file=sys.stderr)
 
         # 2. Try converting woff2 from node_modules @fontsource (if fonttools available)
         if font is None:
