@@ -3,7 +3,7 @@ services:
     name: diamond-scanner
     env: node
     region: tokyo
-    buildCommand: npm install && pip3 install Pillow && npm run build
+    buildCommand: npm install && pip3 install --quiet --no-cache-dir Pillow && npm run build
     startCommand: npm start
     # 持久化存储 - 解决数据库丢失问题
     disk:
