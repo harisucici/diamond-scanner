@@ -178,14 +178,36 @@ def annotate_image(image_base64: str, risk_items: list, output_format: str = "pn
         marker_size = max(20, min(width, height) // 20)
         font_size = max(12, marker_size - 2)
 
-        # Try to load a font, fall back to default
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", font_size)
-        except (IOError, OSError):
+        # Try to load a CJK-compatible font, fall back to default
+        CANDIDATE_FONTS = [
+            # macOS
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Arial Unicode.ttf",
+            "/Library/Fonts/Arial Unicode.ttf",
+            # Linux — Noto CJK (Debian/Ubuntu)
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            # Linux — Noto CJK (RHEL/CentOS)
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/TTF/NotoSansCJK-Regular.ttc",
+            # Linux — WenQuanYi Micro Hei (common fallback)
+            "/usr/share/fonts/wqy-microhei/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            # Generic Latin fallbacks (if no CJK available)
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+
+        font = None
+        for font_path in CANDIDATE_FONTS:
             try:
-                font = ImageFont.truetype("/System/Library/Fonts/Arial Unicode.ttf", font_size)
+                font = ImageFont.truetype(font_path, font_size)
+                break
             except (IOError, OSError):
-                font = ImageFont.load_default()
+                continue
+        if font is None:
+            font = ImageFont.load_default()
 
         # Calculate positions
         positions = calculate_positions(len(risk_items), width, height)
