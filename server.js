@@ -947,7 +947,7 @@ app.post('/api/fashionphile/refresh/:month', async (req, res) => {
       count: result.items.length, 
       month, 
       platform: 'Fashionphile',
-      items: result.items.slice(0, 5)
+      items: items  // 返回数据库中的完整数据
     })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -1031,7 +1031,7 @@ app.post('/api/ebay/refresh/:month', async (req, res) => {
       count: result.items.length, 
       month, 
       platform: 'eBay',
-      items: result.items.slice(0, 5)
+      items: items  // 返回数据库中的完整数据
     })
   } catch (error) {
     res.status(500).json({ error: error.message })
