@@ -189,7 +189,7 @@ def annotate_image(image_base64: str, risk_items: list, output_format: str = "pn
         font_size_val = font_size
 
         # 1. Try project-bundled font (works on any platform including Render)
-        project_font = join(__dir__, '..', 'assets', 'fonts', 'NotoSansSC-Regular.otf')
+        project_font = join(__dir__, 'assets', 'fonts', 'NotoSansSC-Regular.otf')
         try:
             font = ImageFont.truetype(project_font, font_size_val)
         except (IOError, OSError):
