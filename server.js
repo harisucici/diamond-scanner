@@ -1390,10 +1390,10 @@ const loadAlicePrompt = () => {
  * @returns {Promise<string>} AI response text
  */
 const callGLM4V = async (imageBase64, systemPrompt, userPrompt) => {
-  // 使用用户提供的 Qwen 模型配置
-  const CAD_API_URL = 'https://vcrppsmofoyv.cloud.sealos.io/v1/chat/completions'
-  const CAD_MODEL = 'qwen3.6-plus'
-  const CAD_API_KEY = 'sk-8vo0uzDvqF4lf7yrtTksym2MMegkBlGF6LsYgVsae95tTTcj'
+  // 从环境变量读取 Qwen API 配置
+  const CAD_API_URL = process.env.CAD_API_URL
+  const CAD_MODEL = process.env.CAD_MODEL
+  const CAD_API_KEY = process.env.CAD_API_KEY
   
   // Normalize base64: strip data URL prefix if present
   let cleanBase64 = imageBase64
