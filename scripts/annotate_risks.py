@@ -20,8 +20,13 @@ import argparse
 import base64
 import io
 import json
+import os
 import re
 import sys
+from os.path import join, dirname as _dirname
+
+# Script directory for resolving relative paths
+__dir__ = _dirname(_dirname(os.path.abspath(__file__))) if '__file__' in dir() else os.getcwd()
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -179,33 +184,75 @@ def annotate_image(image_base64: str, risk_items: list, output_format: str = "pn
         font_size = max(12, marker_size - 2)
 
         # Try to load a CJK-compatible font, fall back to default
-        CANDIDATE_FONTS = [
-            # macOS
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/Arial Unicode.ttf",
-            "/Library/Fonts/Arial Unicode.ttf",
-            # Linux — Noto CJK (Debian/Ubuntu)
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            # Linux — Noto CJK (RHEL/CentOS)
-            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/TTF/NotoSansCJK-Regular.ttc",
-            # Linux — WenQuanYi Micro Hei (common fallback)
-            "/usr/share/fonts/wqy-microhei/wqy-microhei.ttc",
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-            # Generic Latin fallbacks (if no CJK available)
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-
+        # Priority: project fonts > system fonts > default
         font = None
-        for font_path in CANDIDATE_FONTS:
+        font_size_val = font_size
+
+        # 1. Try project-bundled font (works on any platform including Render)
+        project_font = join(__dir__, '..', 'assets', 'fonts', 'NotoSansSC-Regular.otf')
+        try:
+            font = ImageFont.truetype(project_font, font_size_val)
+        except (IOError, OSError):
+            pass
+
+        # 2. Try converting woff2 from node_modules @fontsource (if fonttools available)
+        if font is None:
             try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except (IOError, OSError):
-                continue
+                from fontTools.ttLib import TTFont
+                import tempfile
+                # Try multiple woff2 subsets, pick the largest one (most glyphs)
+                base_dirs = [
+                    join(__dir__, '..', 'node_modules', '@fontsource', 'noto-sans-sc', 'files'),
+                    join(__dir__, '..', '..', 'node_modules', '@fontsource', 'noto-sans-sc', 'files'),
+                ]
+                best_woff2 = None
+                best_size = 0
+                for base_dir in base_dirs:
+                    if os.path.isdir(base_dir):
+                        for fname in os.listdir(base_dir):
+                            if fname.endswith('.woff2') and '400-normal' in fname:
+                                fpath = join(base_dir, fname)
+                                fsize = os.path.getsize(fpath)
+                                if fsize > best_size:
+                                    best_size = fsize
+                                    best_woff2 = fpath
+                if best_woff2:
+                    tmpfont = TTFont(best_woff2)
+                    tmpfile = tempfile.NamedTemporaryFile(suffix='.otf', delete=False)
+                    tmpfont.save(tmpfile.name)
+                    tmpfile.close()
+                    font = ImageFont.truetype(tmpfile.name, font_size_val)
+            except Exception:
+                pass
+
+        # 3. Try system fonts
+        if font is None:
+            CANDIDATE_FONTS = [
+                # macOS
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/Arial Unicode.ttf",
+                "/Library/Fonts/Arial Unicode.ttf",
+                # Linux — Noto CJK (Debian/Ubuntu)
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                # Linux — Noto CJK (RHEL/CentOS)
+                "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/TTF/NotoSansCJK-Regular.ttc",
+                # Linux — WenQuanYi Micro Hei
+                "/usr/share/fonts/wqy-microhei/wqy-microhei.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                # Generic Latin fallbacks
+                "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            ]
+            for font_path in CANDIDATE_FONTS:
+                try:
+                    font = ImageFont.truetype(font_path, font_size_val)
+                    break
+                except (IOError, OSError):
+                    continue
+
         if font is None:
             font = ImageFont.load_default()
 
