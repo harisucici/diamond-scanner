@@ -69,7 +69,10 @@ export const TABLES = {
   MERCARI_PRODUCTS: 'mercari_products',
   YAHOO_AUCTION_PRODUCTS: 'yahoo_auction_products',
   FASHIONPHILE_PRODUCTS: 'fashionphile_products',
-  EBAY_PRODUCTS: 'ebay_products'
+  EBAY_PRODUCTS: 'ebay_products',
+
+  // CAD 学习表
+  CAD_LEARNING: 'cad_learning'
 }
 
 let db = null
@@ -399,6 +402,18 @@ const SCHEMAS = {
     name_vector: createEmptyVector(),
     search_text: 'sample',
     created_at: new Date().toISOString()
+  }],
+
+  // ========== CAD 学习表 ==========
+
+  [TABLES.CAD_LEARNING]: () => [{
+    id: 'sample_0',
+    image_hash: 'sample_hash',
+    original_analysis: 'sample analysis',
+    user_correction: 'sample correction',
+    risk_item: 'sample risk',
+    embedding: createEmptyVector(),
+    timestamp: new Date().toISOString()
   }]
 }
 

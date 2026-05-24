@@ -16,12 +16,21 @@
           >
             📊 配饰排行
           </button>
+          <button 
+            :class="['nav-tab', { active: currentPage === 'cad' }]" 
+            @click="currentPage = 'cad'"
+          >
+            🔍 CAD 分析
+          </button>
         </div>
         <button class="logout-btn" @click="handleLogout">退出</button>
       </nav>
 
       <!-- 配饰销量排行榜页面 -->
       <NecklaceSales v-if="currentPage === 'sales'" />
+
+      <!-- CAD 设计与生产风险分析 -->
+      <CADAnalysis v-if="currentPage === 'cad'" />
 
       <footer class="main-footer">
         <p>日本配饰销量排行 v1.1</p>
@@ -36,6 +45,7 @@
 <script>
 import { ref, onMounted } from 'vue'
 import NecklaceSales from './pages/NecklaceSales.vue'
+import CADAnalysis from './pages/CADAnalysis.vue'
 import LoginPage from './pages/LoginPage.vue'
 import JewelryAgent from './components/JewelryAgent.vue'
 
@@ -43,6 +53,7 @@ export default {
   name: 'App',
   components: {
     NecklaceSales,
+    CADAnalysis,
     LoginPage,
     JewelryAgent
   },

@@ -273,6 +273,11 @@ export default {
     const loadData = async () => {
       loading.value = true
       try {
+        // 如果 selectedMonth 为空，使用当前月份作为兜底
+        if (!selectedMonth.value || selectedMonth.value.trim() === '') {
+          selectedMonth.value = new Date().toISOString().slice(0, 7)
+        }
+        
         // 加载品类列表 (只有 BUYMA 有品类)
         await loadCategories()
         
@@ -387,10 +392,14 @@ export default {
         console.error('加载eBay月份失败:', error)
       }
       
-      availableMonths.value = Array.from(allMonths).sort().reverse()
+      availableMonths.value = Array.from(allMonths)
+        .filter(m => m && m.trim() !== '')
+        .sort()
+        .reverse()
       
-      // 默认选中最新月份
-      selectedMonth.value = availableMonths.value[0] || ''
+      // 默认选中最新月份，如果没有数据则使用当前月份
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      selectedMonth.value = availableMonths.value[0] || currentMonth
       
       await loadData()
     }
@@ -403,41 +412,23 @@ export default {
       refreshing.value = true
       debugLogs.value = [] // 清空日志
       
-      // 确定刷新用的月份
+      // 确定刷新用的月份 — 所有数据源统一使用当前月份
       const currentMonth = new Date().toISOString().slice(0, 7)
+      selectedMonth.value = currentMonth
       
       try {
-        // 刷新所有启用的数据源
+        // 刷新所有启用的数据源，收集新数据
+        const refreshedData = []
+        
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            // 不同数据源使用不同月份策略
-            let refreshMonthValue = selectedMonth.value
-            let refreshUrl = ''
+            const refreshMonthValue = currentMonth
+            const refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
             
-            if (source.id === 'buyma') {
-              refreshMonthValue = selectedMonth.value
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'fashionphile') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            } else if (source.id === 'ebay') {
-              refreshMonthValue = currentMonth
-              refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            }
-            
-            const response = await fetch(refreshUrl, {
-              method: 'POST'
-            })
+            const response = await fetch(refreshUrl, { method: 'POST' })
             const result = await response.json()
             const duration = Date.now() - startTime
-            
-            // 获取完整数据
-            let fullData = []
-            try {
-              const dataRes = await fetch(`${source.api}?month=${refreshMonthValue}`)
-              fullData = await dataRes.json()
-            } catch (e) {}
             
             debugLogs.value.push({
               name: source.name,
@@ -446,9 +437,34 @@ export default {
               error: result.error || null,
               duration,
               raw: result,
-              fullData: (result.items && result.items.length > 0) ? result.items : fullData.slice(0, 2)
+              fullData: result.items ? result.items.slice(0, 5) : []
             })
             console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
+            
+            // 直接使用刷新返回的 items，不再做额外 GET 请求
+            if (result.items && result.items.length > 0) {
+              result.items.forEach(item => {
+                const normalized = { ...item, _source: source.name }
+                if (source.id === 'fashionphile') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                } else if (source.id === 'ebay') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || 'OTHER'
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
+                  normalized.seller = item.seller
+                }
+                refreshedData.push(normalized)
+              })
+            }
           } catch (e) {
             debugLogs.value.push({
               name: source.name,
@@ -463,7 +479,24 @@ export default {
           }
         }
         
-        await loadData()
+        // 直接使用刷新返回的数据更新页面
+        if (refreshedData.length > 0) {
+          data.value = refreshedData
+          
+          // 更新统计
+          const totalRecords = refreshedData.length
+          const totalSales = refreshedData.reduce((sum, item) => {
+            if (item._source === 'Fashionphile' || item._source === 'eBay') {
+              return sum + (item.price || 0)
+            }
+            return sum + (item.sales || 0)
+          }, 0)
+          stats.value = { totalRecords, totalSales, byWebsite: {}, byCategory: {} }
+        }
+        
+        // 重新加载品类列表
+        await loadCategories()
+        
       } catch (error) {
         console.error('刷新数据失败:', error)
       } finally {
