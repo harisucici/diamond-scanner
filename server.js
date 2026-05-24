@@ -5,11 +5,13 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 // SQLite removed - using LanceDB
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
-import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, TABLES } from './db/lancedb.js'
+import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, getDb, TABLES } from './db/lancedb.js'
 import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
 import { detectLanguage, getI18nText, i18n } from './services/langDetect.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
@@ -51,7 +53,7 @@ const COMMON_HEADERS = {
 }
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
 
 // 静态文件服务 - 开发和生产环境都启用
 app.use(express.static(path.join(__dirname, 'dist')))
@@ -1360,6 +1362,369 @@ const handleChatWithProducts = async (req, res) => {
     })
   }
 }
+
+// ============================================================
+// CAD Analysis API — /api/cad/analyze
+// ============================================================
+
+const execAsync = promisify(exec)
+
+/**
+ * Load alice.md system prompt for CAD analysis.
+ * Returns the markdown content as a string.
+ */
+const loadAlicePrompt = () => {
+  const alicePath = join(__dirname, 'config', 'alice.md')
+  if (fs.existsSync(alicePath)) {
+    return fs.readFileSync(alicePath, 'utf-8')
+  }
+  // Fallback: return a minimal prompt if alice.md is missing
+  return 'You are Alice, a CAD design and production risk analysis agent. Analyze the uploaded CAD image for structural, material, and manufacturing risks.'
+}
+
+/**
+ * Call GLM-4V multimodal API with image + text.
+ * @param {string} imageBase64 - Base64 encoded image (may or may not have data: prefix)
+ * @param {string} systemPrompt - System prompt text
+ * @param {string} userPrompt - User prompt text
+ * @returns {Promise<string>} AI response text
+ */
+const callGLM4V = async (imageBase64, systemPrompt, userPrompt) => {
+  // 使用用户提供的 Qwen 模型配置
+  const CAD_API_URL = 'https://vcrppsmofoyv.cloud.sealos.io/v1/chat/completions'
+  const CAD_MODEL = 'qwen3.6-plus'
+  const CAD_API_KEY = 'sk-8vo0uzDvqF4lf7yrtTksym2MMegkBlGF6LsYgVsae95tTTcj'
+  
+  // Normalize base64: strip data URL prefix if present
+  let cleanBase64 = imageBase64
+  if (cleanBase64.includes(',')) {
+    const parts = cleanBase64.split(',')
+    cleanBase64 = parts[1]
+  }
+
+  // Detect MIME type from original string
+  let mimeType = 'image/jpeg'
+  if (imageBase64.startsWith('data:')) {
+    const match = imageBase64.match(/^data:(image\/\w+);/)
+    if (match) mimeType = match[1]
+  }
+
+  // Qwen 兼容 OpenAI 多模态格式
+  const combinedPrompt = `${systemPrompt}\n\n---\n${userPrompt}`
+
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: combinedPrompt },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${mimeType};base64,${cleanBase64}`
+          }
+        }
+      ]
+    }
+  ]
+
+  const response = await fetch(CAD_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${CAD_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: CAD_MODEL,
+      max_tokens: 4096,
+      messages: messages
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`CAD Model API 错误: ${response.status} - ${errorText}`)
+    throw new Error(`CAD 模型 API 请求失败: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content || 'AI 返回了空响应'
+}
+
+/**
+ * Annotate image with risk markers using Python + Pillow.
+ * Falls back to original image if Pillow is unavailable.
+ * @param {string} imageBase64 - Original image as base64
+ * @param {string} analysisText - AI analysis text containing numbered risk items
+ * @returns {Promise<string>} Annotated image as base64
+ */
+const annotateImage = async (imageBase64, analysisText) => {
+  const scriptPath = join(__dirname, 'scripts', 'annotate_risks.py')
+
+  if (!fs.existsSync(scriptPath)) {
+    console.log('Annotation script not found, returning original image')
+    return imageBase64
+  }
+
+  // Escape strings for safe shell passing
+  const escapedImage = imageBase64.replace(/'/g, "'\\''")
+  const escapedAnalysis = analysisText.replace(/'/g, "'\\''")
+
+  const cmd = `python3 '${scriptPath}' --image '${escapedImage}' --analysis '${escapedAnalysis}'`
+
+  try {
+    const { stdout, stderr } = await execAsync(cmd, {
+      maxBuffer: 50 * 1024 * 1024,  // 50MB buffer for large images
+      timeout: 30000  // 30 second timeout
+    })
+
+    if (stderr && stderr.includes('ModuleNotFoundError')) {
+      console.log('Pillow not available, returning original image')
+      return imageBase64
+    }
+
+    const annotatedBase64 = stdout.trim()
+    if (annotatedBase64 && annotatedBase64.length > 100) {
+      console.log('Image annotation successful')
+      return annotatedBase64
+    }
+
+    return imageBase64
+  } catch (err) {
+    console.log('Annotation failed, returning original image:', err.message)
+    return imageBase64
+  }
+}
+
+/**
+ * POST /api/cad/analyze
+ * Body: { image_base64: string, prompt_override?: string }
+ * Response: { success: true, analysis_text: string, annotated_image_base64: string }
+ */
+app.post('/api/cad/analyze', async (req, res) => {
+  try {
+    // Accept both 'image_base64' (spec) and 'image' (frontend) field names
+    const imageBase64 = req.body.image_base64 || req.body.image
+    const promptOverride = req.body.prompt_override
+
+    if (!imageBase64) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 image_base64 参数'
+      })
+    }
+
+    console.log('🔬 CAD 分析请求已收到')
+
+    // Step 1: Load alice.md system prompt
+    const systemPrompt = loadAlicePrompt()
+    console.log('Alice prompt loaded')
+
+    // Step 1.5: Fetch learning context from history
+    let learningContext = ''
+    try {
+      // Build a query from the image description or prompt
+      const searchQuery = promptOverride || 'CAD design production risk analysis'
+
+      const db = await getDb()
+      const tableNames = await db.tableNames()
+      if (tableNames.includes(TABLES.CAD_LEARNING)) {
+        const queryVector = await generateEmbedding(searchQuery)
+        const learningResults = await vectorSearch(TABLES.CAD_LEARNING, queryVector, 3)
+
+        if (learningResults && learningResults.length > 0) {
+          learningContext = '\n## 历史学习参考\n以下是之前的修正记录，请在分析时参考这些经验：\n'
+          learningResults.forEach((r, i) => {
+            learningContext += `\n### 修正记录 ${i + 1}\n`
+            learningContext += `- **风险项**: ${r.risk_item || 'N/A'}\n`
+            learningContext += `- **原始分析**: ${r.original_analysis || ''}\n`
+            learningContext += `- **用户修正**: ${r.user_correction || ''}\n`
+          })
+          console.log(`📚 注入 ${learningResults.length} 条历史学习参考`)
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ 获取历史学习参考失败:', e.message)
+    }
+
+    // Step 2: Build user prompt with learning context
+    const userPrompt = (promptOverride ||
+      '请分析这张 CAD 设计图，识别所有潜在的生产风险，按照你的分析框架输出完整报告。请在输出中使用数字序号（如 ### 1、### 2）标注每个风险点。') + learningContext
+
+    // Step 3: Call GLM-4V multimodal API
+    console.log('Calling GLM-4V...')
+    const analysisText = await callGLM4V(imageBase64, systemPrompt, userPrompt)
+    console.log('GLM-4V response received')
+
+    // Step 4: Annotate image with risk markers
+    console.log('Annotating image...')
+    const annotatedBase64 = await annotateImage(imageBase64, analysisText)
+    console.log('Image annotation complete')
+
+    // Step 5: Return result
+    res.json({
+      success: true,
+      analysis_text: analysisText,
+      annotated_image_base64: annotatedBase64
+    })
+  } catch (error) {
+    console.error('CAD Analysis Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: error.message.includes('未配置') ? error.message : 'CAD 分析服务暂时不可用',
+      message: error.message
+    })
+  }
+})
+
+
+// ============================================================
+// CAD Learning API — store & retrieve correction history
+// ============================================================
+
+/**
+ * POST /api/cad/learn
+ * Body: { image_hash, image_base64, original_analysis, user_correction, risk_item }
+ * Generates embedding from text, stores in cad_learning table.
+ * Auto-creates table if it doesn't exist.
+ */
+app.post('/api/cad/learn', async (req, res) => {
+  try {
+    const { image_hash, image_base64, original_analysis, user_correction, risk_item } = req.body
+
+    if (!image_hash || !original_analysis || !user_correction) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数: image_hash, original_analysis, user_correction'
+      })
+    }
+
+    console.log('📖 CAD 学习记录请求已收到')
+
+    // Generate embedding from text combination
+    const embeddingText = `${image_hash} ${original_analysis} ${user_correction}`
+    const embedding = await generateEmbedding(embeddingText)
+
+    const record = {
+      id: `cad_learn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      image_hash,
+      image_base64: image_base64 || '',
+      original_analysis,
+      user_correction,
+      risk_item: risk_item || '',
+      embedding,
+      timestamp: new Date().toISOString()
+    }
+
+    await insertData(TABLES.CAD_LEARNING, record)
+
+    res.json({
+      success: true,
+      message: '学习记录已保存',
+      id: record.id,
+      timestamp: record.timestamp
+    })
+  } catch (error) {
+    console.error('CAD Learn Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '保存学习记录失败',
+      message: error.message
+    })
+  }
+})
+
+/**
+ * GET /api/cad/learn?query=xxx
+ * Generates embedding for query, vector-searches cad_learning table, returns Top 3.
+ */
+app.get('/api/cad/learn', async (req, res) => {
+  try {
+    const { query } = req.query
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 query 参数'
+      })
+    }
+
+    const db = await getDb()
+    const tableNames = await db.tableNames()
+
+    if (!tableNames.includes(TABLES.CAD_LEARNING)) {
+      return res.json({ success: true, results: [], message: '暂无学习记录' })
+    }
+
+    // Generate embedding for query
+    const queryVector = await generateEmbedding(query)
+
+    // Vector search, top 3
+    const results = await vectorSearch(TABLES.CAD_LEARNING, queryVector, 3)
+
+    // Strip embedding vectors from response for efficiency
+    const cleanedResults = results.map(r => {
+      const { embedding, ...rest } = r
+      return rest
+    })
+
+    res.json({
+      success: true,
+      count: cleanedResults.length,
+      results: cleanedResults
+    })
+  } catch (error) {
+    console.error('CAD Learn Search Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '搜索学习记录失败',
+      message: error.message
+    })
+  }
+})
+
+/**
+ * GET /api/cad/history
+ * Returns all historical analysis records (simple query, no vector search).
+ * Fields: timestamp, image_hash, analysis_summary
+ */
+app.get('/api/cad/history', async (req, res) => {
+  try {
+    const db = await getDb()
+    const tableNames = await db.tableNames()
+
+    if (!tableNames.includes(TABLES.CAD_LEARNING)) {
+      return res.json({ success: true, records: [], message: '暂无历史记录' })
+    }
+
+    const allRecords = await queryData(TABLES.CAD_LEARNING)
+
+    // Return summary fields only
+    const summary = allRecords.map(r => ({
+      id: r.id,
+      timestamp: r.timestamp,
+      image_hash: r.image_hash,
+      analysis_summary: (r.original_analysis || '').substring(0, 200),
+      risk_item: r.risk_item || ''
+    }))
+
+    // Sort by timestamp descending
+    summary.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+
+    res.json({
+      success: true,
+      count: summary.length,
+      records: summary
+    })
+  } catch (error) {
+    console.error('CAD History Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '获取历史记录失败',
+      message: error.message
+    })
+  }
+})
+
 
 app.post('/api/chat/glm', handleGLMChat)
 app.post('/api/chat/groq', handleGroqChat)
