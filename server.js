@@ -1384,19 +1384,20 @@ const parseRiskItems = (analysisText) => {
   // Pattern: 1、Title or [1] Title
   const pattern2 = /(?:\[(\d+)\]|(\d+)[、.．]\s*)(.+?)(?=\n|$)/gm
 
-  // Parse coordinate pattern: x: 35%, y: 60% or x:35%, y:60%
-  const coordPattern = /x[:\s]*(\d+(?:\.\d+)?)\s*%\s*,\s*y[:\s]*(\d+(?:\.\d+)?)\s*%/i
+  // Parse coordinate pattern: x: 35%, y: 60% or x：35%，y：60% or x=35% y=60% etc.
+  const coordPattern = /x[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]\s*[,:，、\s]\s*y[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]/i
 
   for (const match of analysisText.matchAll(pattern1)) {
     const num = parseInt(match[1] || match[2], 10)
     const title = match[3].trim()
     if (num && !seen.has(num) && title) {
       seen.add(num)
-      // Look for coordinates in the next few lines after this item
+      // Look for coordinates in the text following this item (up to 800 chars or next item)
       const itemStart = match.index
-      const nextItemMatch = analysisText.substring(itemStart + 1).match(/#{1,3}\s*(?:\[\d+\]|\d+)\s*.+/g)
-      const itemEnd = nextItemMatch ? itemStart + 1 + nextItemMatch[0].index : analysisText.length
-      const itemBlock = analysisText.substring(itemStart, itemEnd)
+      const remaining = analysisText.substring(itemStart)
+      // Find next item header
+      const nextItemIdx = remaining.substring(1).search(/#{1,3}\s*(?:\[\d+\]|\d+)\s*.+/)
+      const itemBlock = nextItemIdx > 0 ? remaining.substring(0, Math.min(800, nextItemIdx + 1)) : remaining.substring(0, 800)
       const coordMatch = itemBlock.match(coordPattern)
 
       items.push({
@@ -1539,6 +1540,9 @@ const annotateImage = async (imageBase64, analysisText) => {
     riskItems.forEach(item => {
       console.log(`[annotate] Item ${item.num}: level=${item.level}, coordX=${item.coordX}, coordY=${item.coordY}, title=${item.title.substring(0, 40)}`)
     })
+    
+    // Debug: log first 500 chars of analysis text
+    console.log(`[annotate] Analysis preview: ${analysisText.substring(0, 500)}`)
 
     // Clean and decode image
     let cleanBase64 = imageBase64
