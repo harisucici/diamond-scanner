@@ -1536,6 +1536,9 @@ const annotateImage = async (imageBase64, analysisText) => {
     // Parse risk items
     const riskItems = parseRiskItems(analysisText)
     console.log(`[annotate] Parsed ${riskItems.length} risk items`)
+    riskItems.forEach(item => {
+      console.log(`[annotate] Item ${item.num}: level=${item.level}, coordX=${item.coordX}, coordY=${item.coordY}, title=${item.title.substring(0, 40)}`)
+    })
 
     // Clean and decode image
     let cleanBase64 = imageBase64
@@ -1557,10 +1560,10 @@ const annotateImage = async (imageBase64, analysisText) => {
     // Calculate marker positions - use AI coordinates if available, fallback to grid
     const positions = calculatePositions(riskItems, width, height)
 
-    // Fixed font sizes - readable but not too large
-    const markerRadius = 18
-    const numberFontSize = 14
-    const labelFontSize = 12
+    // Fixed font sizes - 3x larger for better readability
+    const markerRadius = 54
+    const numberFontSize = 42
+    const labelFontSize = 36
 
     // Risk colors - now used for both circle and label background
     const RISK_COLORS = {
