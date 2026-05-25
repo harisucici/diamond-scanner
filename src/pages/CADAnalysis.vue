@@ -78,27 +78,6 @@
         </div>
       </div>
 
-      <!-- 评分卡片 -->
-      <div v-if="parsedScore !== null" class="score-section">
-        <div class="score-card" :class="scoreClass">
-          <div class="score-circle">
-            <svg viewBox="0 0 36 36" class="score-ring">
-              <path
-                class="score-ring-bg"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                class="score-ring-fill"
-                :style="{ strokeDasharray: parsedScore + ', 100' }"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-            <span class="score-value">{{ parsedScore }}</span>
-          </div>
-          <div class="score-label">综合评分</div>
-        </div>
-      </div>
-
       <!-- Markdown 分析结果 -->
       <div class="analysis-content">
         <h2>📋 分析报告</h2>
@@ -242,23 +221,6 @@ export default {
 
     // 解析风险项
     const riskItems = ref([])
-
-    // 解析评分
-    const parsedScore = computed(() => {
-      if (!analysisResult.value?.analysis_text) return null
-      const match = analysisResult.value.analysis_text.match(/(?:评分|得分|score)[：:]?\s*(\d+)/i)
-      if (match) return parseInt(match[1], 10)
-      const matchPct = analysisResult.value.analysis_text.match(/(\d+)\s*%/)
-      if (matchPct) return parseInt(matchPct[1], 10)
-      return null
-    })
-
-    const scoreClass = computed(() => {
-      if (parsedScore.value === null) return ''
-      if (parsedScore.value >= 80) return 'score-high'
-      if (parsedScore.value >= 60) return 'score-medium'
-      return 'score-low'
-    })
 
     // 渲染 Markdown 为 HTML
     const renderedMarkdown = computed(() => {
@@ -651,7 +613,7 @@ export default {
     return {
       fileInput, isDragOver, previewUrl, selectedFile, uploadError,
       analyzing, analysisStep, analysisResult, annotatedImageUrl,
-      parsedScore, scoreClass, renderedMarkdown,
+      renderedMarkdown,
       riskItems, hasFeedback,
       feedbackMessage, feedbackSuccess, submittingFeedback,
       history, loadingHistory,
@@ -904,66 +866,6 @@ export default {
   max-height: 600px;
   object-fit: contain;
   border-radius: 8px;
-}
-
-/* 评分 */
-.score-section {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-.score-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 24px 40px;
-  text-align: center;
-  transition: all 0.3s ease;
-}
-.score-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-}
-.score-circle {
-  position: relative;
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 8px;
-}
-.score-ring {
-  transform: rotate(-90deg);
-  width: 100%;
-  height: 100%;
-}
-.score-ring-bg {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 3;
-}
-.score-ring-fill {
-  fill: none;
-  stroke-width: 3;
-  stroke-linecap: round;
-  transition: stroke-dasharray 1s ease;
-}
-.score-high .score-ring-fill { stroke: #00d4ff; }
-.score-medium .score-ring-fill { stroke: #fbbf24; }
-.score-low .score-ring-fill { stroke: #ff6b6b; }
-.score-value {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 1.6rem;
-  font-weight: bold;
-}
-.score-high .score-value { color: #00d4ff; }
-.score-medium .score-value { color: #fbbf24; }
-.score-low .score-value { color: #ff6b6b; }
-.score-label {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.9rem;
 }
 
 /* Markdown 内容 */
