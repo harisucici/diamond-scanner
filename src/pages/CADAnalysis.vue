@@ -78,27 +78,6 @@
         </div>
       </div>
 
-      <!-- 评分卡片 -->
-      <div v-if="parsedScore !== null" class="score-section">
-        <div class="score-card" :class="scoreClass">
-          <div class="score-circle">
-            <svg viewBox="0 0 36 36" class="score-ring">
-              <path
-                class="score-ring-bg"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                class="score-ring-fill"
-                :style="{ strokeDasharray: parsedScore + ', 100' }"
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-            <span class="score-value">{{ parsedScore }}</span>
-          </div>
-          <div class="score-label">综合评分</div>
-        </div>
-      </div>
-
       <!-- Markdown 分析结果 -->
       <div class="analysis-content">
         <h2>📋 分析报告</h2>
@@ -242,23 +221,6 @@ export default {
 
     // 解析风险项
     const riskItems = ref([])
-
-    // 解析评分
-    const parsedScore = computed(() => {
-      if (!analysisResult.value?.analysis_text) return null
-      const match = analysisResult.value.analysis_text.match(/(?:评分|得分|score)[：:]?\s*(\d+)/i)
-      if (match) return parseInt(match[1], 10)
-      const matchPct = analysisResult.value.analysis_text.match(/(\d+)\s*%/)
-      if (matchPct) return parseInt(matchPct[1], 10)
-      return null
-    })
-
-    const scoreClass = computed(() => {
-      if (parsedScore.value === null) return ''
-      if (parsedScore.value >= 80) return 'score-high'
-      if (parsedScore.value >= 60) return 'score-medium'
-      return 'score-low'
-    })
 
     // 渲染 Markdown 为 HTML
     const renderedMarkdown = computed(() => {
