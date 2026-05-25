@@ -613,7 +613,7 @@ export default {
     return {
       fileInput, isDragOver, previewUrl, selectedFile, uploadError,
       analyzing, analysisStep, analysisResult, annotatedImageUrl,
-      parsedScore, scoreClass, renderedMarkdown,
+      renderedMarkdown,
       riskItems, hasFeedback,
       feedbackMessage, feedbackSuccess, submittingFeedback,
       history, loadingHistory,

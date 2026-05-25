@@ -2015,13 +2015,17 @@ app.get('/api/cad/history', async (req, res) => {
 
     const allRecords = await queryData(TABLES.CAD_LEARNING)
 
+    // Filter out sample data
+    const realRecords = allRecords.filter(r => !r.id.startsWith('sample_'))
+
     // Return summary fields only
-    const summary = allRecords.map(r => ({
+    const summary = realRecords.map(r => ({
       id: r.id,
       timestamp: r.timestamp,
       image_hash: r.image_hash,
       analysis_summary: (r.original_analysis || '').substring(0, 200),
-      risk_item: r.risk_item || ''
+      risk_item: r.risk_item || '',
+      thumbnail: r.image_base64 ? (r.image_base64.startsWith('data:') ? r.image_base64 : `data:image/jpeg;base64,${r.image_base64}`) : null
     }))
 
     // Sort by timestamp descending
