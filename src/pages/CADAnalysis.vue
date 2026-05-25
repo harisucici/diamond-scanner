@@ -868,66 +868,6 @@ export default {
   border-radius: 8px;
 }
 
-/* 评分 */
-.score-section {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-.score-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 24px 40px;
-  text-align: center;
-  transition: all 0.3s ease;
-}
-.score-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-}
-.score-circle {
-  position: relative;
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 8px;
-}
-.score-ring {
-  transform: rotate(-90deg);
-  width: 100%;
-  height: 100%;
-}
-.score-ring-bg {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 3;
-}
-.score-ring-fill {
-  fill: none;
-  stroke-width: 3;
-  stroke-linecap: round;
-  transition: stroke-dasharray 1s ease;
-}
-.score-high .score-ring-fill { stroke: #00d4ff; }
-.score-medium .score-ring-fill { stroke: #fbbf24; }
-.score-low .score-ring-fill { stroke: #ff6b6b; }
-.score-value {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 1.6rem;
-  font-weight: bold;
-}
-.score-high .score-value { color: #00d4ff; }
-.score-medium .score-value { color: #fbbf24; }
-.score-low .score-value { color: #ff6b6b; }
-.score-label {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.9rem;
-}
-
 /* Markdown 内容 */
 .analysis-content {
   background: rgba(255, 255, 255, 0.05);
