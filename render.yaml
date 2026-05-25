@@ -3,14 +3,8 @@ services:
     name: diamond-scanner
     env: node
     region: tokyo
-    buildCommand: |
-      npm install
-      python3 --version
-      python3 -m pip --version 2>&1 || (python3 -c "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/get-pip.py', '/tmp/get-pip.py')" && python3 /tmp/get-pip.py)
-      python3 -m pip install Pillow
-      python3 -c "from PIL import Image; print('Pillow installed successfully')"
-      npm run build
-    startCommand: npm start
+    buildCommand: npm install && npm run build
+    startCommand: bash -c 'python3 -m pip --version 2>/dev/null || (python3 -c "import urllib.request; urllib.request.urlretrieve(\"https://bootstrap.pypa.io/get-pip.py\", \"/tmp/get-pip.py\")" && python3 /tmp/get-pip.py); python3 -m pip install --user Pillow; npm start'
     # 持久化存储 - 解决数据库丢失问题
     disk:
       name: diamond-data
