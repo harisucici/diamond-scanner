@@ -1490,7 +1490,11 @@ const annotateImage = async (imageBase64, analysisText) => {
     })
 
     if (stderr) {
-      console.log('[annotateImage] stderr:', stderr.substring(0, 500))
+      console.log('[annotateImage] stderr (first 500):', stderr.substring(0, 500))
+      if (stderr.includes('Pillow') || stderr.includes('annotate')) {
+        console.log('[annotateImage] Relevant stderr lines:')
+        stderr.split('\n').filter(l => l.includes('Pillow') || l.includes('annotate')).forEach(l => console.log('  ', l))
+      }
     }
 
     // Read output from file

@@ -27,12 +27,15 @@ from os.path import join, dirname as _dirname
 
 # Script directory for resolving relative paths
 __dir__ = _dirname(_dirname(os.path.abspath(__file__))) if '__file__' in dir() else os.getcwd()
+print(f'[annotate_risks] __dir__ = {__dir__}', file=sys.stderr)
 
 try:
     from PIL import Image, ImageDraw, ImageFont
     PIL_AVAILABLE = True
-except ImportError:
+    print(f'[annotate_risks] Pillow loaded OK, version={getattr(Image, "__version__", "unknown")}', file=sys.stderr)
+except ImportError as e:
     PIL_AVAILABLE = False
+    print(f'[annotate_risks] Pillow NOT available: {e}', file=sys.stderr)
 
 # Risk level colors (R, G, B, A)
 RISK_COLORS = {
