@@ -9,7 +9,7 @@ import { dirname, join } from 'path'
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
-import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, getDb, TABLES } from './db/lancedb.js'
+import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, getDb, TABLES, countRows } from './db/lancedb.js'
 import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
 import { detectLanguage, getI18nText, i18n } from './services/langDetect.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
@@ -1384,8 +1384,27 @@ const parseRiskItems = (analysisText) => {
   // Pattern: 1、Title or [1] Title
   const pattern2 = /(?:\[(\d+)\]|(\d+)[、.．]\s*)(.+?)(?=\n|$)/gm
 
-  // Parse coordinate pattern: x: 35%, y: 60% or x：35%，y：60% or x=35% y=60% etc.
-  const coordPattern = /x[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]\s*[,:，、\s]\s*y[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]/i
+  // Enhanced coordinate patterns - more flexible matching
+  const coordPatterns = [
+    /坐标[：:\s]*x[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]\s*[,:，、\s]+\s*y[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]/i,
+    /x[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]\s*[,:，、\s]+\s*y[:：\s=]*(\d+(?:\.\d+)?)\s*[%％]/i,
+    /位置[：:\s]*[\(（](\d+(?:\.\d+)?)\s*[%％]\s*[,:，、]\s*(\d+(?:\.\d+)?)\s*[%％][\)）]/i,
+    /坐标[：:\s]*[\(（](\d+(?:\.\d+)?)\s*[,%％]\s*[,:，、]\s*(\d+(?:\.\d+)?)\s*[,%％][\)）]/i,
+  ]
+
+  // Helper to find coordinates in a text block
+  const findCoords = (text) => {
+    for (const pattern of coordPatterns) {
+      const match = text.match(pattern)
+      if (match) {
+        return {
+          x: parseFloat(match[1]) / 100,
+          y: parseFloat(match[2]) / 100
+        }
+      }
+    }
+    return null
+  }
 
   for (const match of analysisText.matchAll(pattern1)) {
     const num = parseInt(match[1] || match[2], 10)
@@ -1398,14 +1417,14 @@ const parseRiskItems = (analysisText) => {
       // Find next item header
       const nextItemIdx = remaining.substring(1).search(/#{1,3}\s*(?:\[\d+\]|\d+)\s*.+/)
       const itemBlock = nextItemIdx > 0 ? remaining.substring(0, Math.min(800, nextItemIdx + 1)) : remaining.substring(0, 800)
-      const coordMatch = itemBlock.match(coordPattern)
+      const coords = findCoords(itemBlock)
 
       items.push({
         num,
         title: title.substring(0, 60),
         level: detectRiskLevel(title),
-        coordX: coordMatch ? parseFloat(coordMatch[1]) / 100 : null,
-        coordY: coordMatch ? parseFloat(coordMatch[2]) / 100 : null
+        coordX: coords ? coords.x : null,
+        coordY: coords ? coords.y : null
       })
     }
   }
@@ -1416,7 +1435,13 @@ const parseRiskItems = (analysisText) => {
       const title = match[3].trim()
       if (num && num >= 1 && num <= 30 && !seen.has(num) && title && title.length < 100) {
         seen.add(num)
-        items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title), coordX: null, coordY: null })
+        const itemStart = match.index
+        const remaining = analysisText.substring(itemStart)
+        const nextItemIdx = remaining.substring(1).search(/(?:\[\d+\]|\d+[、.．])\s*.+/)
+        const itemBlock = nextItemIdx > 0 ? remaining.substring(0, Math.min(800, nextItemIdx + 1)) : remaining.substring(0, 800)
+        const coords = findCoords(itemBlock)
+
+        items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title), coordX: coords ? coords.x : null, coordY: coords ? coords.y : null })
       }
     }
   }
@@ -1439,15 +1464,103 @@ const detectRiskLevel = (text) => {
 }
 
 /**
- * Load alice.md system prompt for CAD analysis.
- * Returns the markdown content as a string.
+ * Load alice.yaml system prompt for CAD analysis.
+ * Returns a formatted prompt string built from the YAML config.
  */
 const loadAlicePrompt = () => {
-  const alicePath = join(__dirname, 'config', 'alice.md')
+  const alicePath = join(__dirname, 'config', 'alice.yaml')
   if (fs.existsSync(alicePath)) {
-    return fs.readFileSync(alicePath, 'utf-8')
+    const raw = fs.readFileSync(alicePath, 'utf-8')
+    const cfg = yaml.load(raw)
+
+    // Build prompt from YAML config
+    let prompt = `你是 ${cfg.name}，${cfg.role}。\n\n`
+    prompt += `${cfg.identity.description}\n\n`
+    prompt += `**${cfg.identity.disclaimer}**\n\n`
+
+    prompt += `## 工作原则\n`
+    cfg.principles.forEach((p, i) => { prompt += `${i + 1}. ${p}\n` })
+    prompt += '\n'
+
+    prompt += `## 分析框架\n\n`
+
+    // Step 1
+    const s1 = cfg.analysis_framework.step1_product_identification
+    prompt += `### Step 1：识别产品信息\n${s1.description}\n\n`
+    prompt += `| 字段 | 示例 |\n|------|------|\n`
+    Object.entries(s1.fields).forEach(([k, v]) => { prompt += `| ${k} | ${v} |\n` })
+    prompt += `\n${s1.rule}\n\n`
+
+    // Step 2
+    prompt += `### Step 2：六大维度检查\n\n`
+    const s2 = cfg.analysis_framework.step2_six_dimensions
+
+    // Geometric
+    prompt += `#### ① ${s2.geometric_structure.name}\n`
+    s2.geometric_structure.items.forEach(i => { prompt += `- ${i}\n` })
+    prompt += '\n'
+
+    // Material
+    prompt += `#### ② ${s2.material.name}\n`
+    s2.material.items.forEach(i => { prompt += `- ${i}\n` })
+    prompt += '\n'
+
+    // Manufacturing
+    prompt += `#### ③ ${s2.manufacturing.name}\n`
+    s2.manufacturing.items.forEach(i => { prompt += `- ${i}\n` })
+    prompt += '\n'
+
+    // Physics
+    prompt += `#### ④ ${s2.physics.name}\n`
+    s2.physics.items.forEach(i => { prompt += `- ${i}\n` })
+    prompt += '\n'
+
+    // Usage
+    prompt += `#### ⑤ ${s2.usage_scenario.name}\n`
+    s2.usage_scenario.items.forEach(i => { prompt += `- ${i}\n` })
+    prompt += '\n'
+
+    // High frequency patterns
+    prompt += `#### ⑥ ${s2.high_frequency_patterns.name}\n`
+    prompt += `${s2.high_frequency_patterns.description}\n\n`
+    prompt += `| # | 风险模式 | 典型后果 |\n|---|---------|---------|\n`
+    s2.high_frequency_patterns.patterns.forEach(p => {
+      prompt += `| ${p.id} | ${p.pattern} | ${p.consequence} |\n`
+    })
+    prompt += '\n'
+
+    // Step 3
+    const s3 = cfg.analysis_framework.step3_risk_levels
+    prompt += `### Step 3：风险评级\n\n`
+    prompt += `| 等级 | 定义 |\n|------|------|\n`
+    Object.entries(s3.levels).forEach(([k, v]) => {
+      prompt += `| ${v.icon} ${v.label} | ${v.definition} |\n`
+    })
+    prompt += '\n'
+
+    // Step 4
+    const s4 = cfg.analysis_framework.step4_annotation_coordinates
+    prompt += `### Step 4：${s4.description}\n\n`
+    prompt += `${s4.rule}\n\n**坐标规则（严格遵守）：**\n`
+    s4.coordinate_rules.forEach((r, i) => { prompt += `${i + 1}. ${r}\n` })
+    prompt += '\n'
+
+    // Output template
+    prompt += `## 输出格式\n\n每次分析必须按以下模板输出：\n\n`
+    prompt += cfg.output_template + '\n\n'
+
+    // Scoring
+    prompt += `## 评分参考标准\n\n| 分数 | 含义 |\n|------|------|\n`
+    cfg.scoring_reference.forEach(s => { prompt += `| ${s.range} | ${s.meaning} |\n` })
+    prompt += '\n'
+
+    // Language style
+    prompt += `## 语言风格\n`
+    cfg.language_style.forEach(s => { prompt += `- ${s}\n` })
+
+    return prompt
   }
-  // Fallback: return a minimal prompt if alice.md is missing
+  // Fallback: return a minimal prompt if alice.yaml is missing
   return 'You are Alice, a CAD design and production risk analysis agent. Analyze the uploaded CAD image for structural, material, and manufacturing risks.'
 }
 
@@ -1564,10 +1677,10 @@ const annotateImage = async (imageBase64, analysisText) => {
     // Calculate marker positions - use AI coordinates if available, fallback to grid
     const positions = calculatePositions(riskItems, width, height)
 
-    // Fixed font sizes - 3x larger for better readability
-    const markerRadius = 54
-    const numberFontSize = 42
-    const labelFontSize = 36
+    // Fixed font sizes - reduced by 50%
+    const markerRadius = 27
+    const numberFontSize = 21
+    const labelFontSize = 18
 
     // Risk colors - now used for both circle and label background
     const RISK_COLORS = {
@@ -1589,7 +1702,7 @@ const annotateImage = async (imageBase64, analysisText) => {
       ctx.fillStyle = colors.circle
       ctx.fill()
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
-      ctx.lineWidth = 2.5
+      ctx.lineWidth = 1.5
       ctx.stroke()
 
       // Draw number in center
@@ -1605,11 +1718,11 @@ const annotateImage = async (imageBase64, analysisText) => {
       const labelWidth = ctx.measureText(label).width
 
       // Position label below the circle
-      const pad = 5
+      const pad = 3
       const labelH = labelFontSize + pad * 2
       const labelW = labelWidth + pad * 2
       const labelX = x - labelW / 2
-      const labelY = y + r + 5
+      const labelY = y + r + 3
 
       // Ensure label stays within image bounds
       const safeLabelX = Math.max(2, Math.min(labelX, width - labelW - 2))
@@ -1618,15 +1731,15 @@ const annotateImage = async (imageBase64, analysisText) => {
       // Draw label background with risk color
       ctx.fillStyle = colors.label
       ctx.beginPath()
-      ctx.roundRect(safeLabelX, safeLabelY, labelW, labelH, 4)
+      ctx.roundRect(safeLabelX, safeLabelY, labelW, labelH, 2)
       ctx.fill()
 
       // Add subtle border for better visibility
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
-      ctx.lineWidth = 1
+      ctx.lineWidth = 0.5
       ctx.stroke()
 
-      // Draw label text in white
+      // Draw label text in white - perfectly aligned within background
       ctx.fillStyle = '#FFFFFF'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
@@ -1736,7 +1849,8 @@ app.post('/api/cad/analyze', async (req, res) => {
 
     // Step 2: Build user prompt with learning context
     const userPrompt = (promptOverride ||
-      '请分析这张 CAD 设计图，识别所有潜在的生产风险，按照你的分析框架输出完整报告。请在输出中使用数字序号（如 ### 1、### 2）标注每个风险点。') + learningContext
+      '请分析这张 CAD 设计图，识别所有潜在的生产风险，按照你的分析框架输出完整报告。\n' +
+      '**重要：每个风险点必须在标题下方单独一行提供坐标，格式为 `坐标：x: 35%, y: 60%`（左上角0%,0%，右下角100%,100%）。坐标用于在图片上标注风险位置，必须准确。') + learningContext
 
     // Step 3: Call GLM-4V multimodal API
     console.log('Calling GLM-4V...')
@@ -1804,6 +1918,21 @@ app.post('/api/cad/learn', async (req, res) => {
     }
 
     await insertData(TABLES.CAD_LEARNING, record)
+
+    // FIFO: keep only the latest 10 records
+    const totalRows = await countRows(TABLES.CAD_LEARNING)
+    if (totalRows > 10) {
+      const allRecords = await queryData(TABLES.CAD_LEARNING)
+      // Sort by timestamp ascending, delete the oldest ones
+      const sorted = allRecords
+        .filter(r => !r.id.startsWith('sample_'))
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      const toDelete = sorted.slice(0, sorted.length - 10)
+      for (const old of toDelete) {
+        await deleteData(TABLES.CAD_LEARNING, `id = '${old.id}'`)
+      }
+      console.log(`🗑️ CAD 学习记录 FIFO 清理: 删除 ${toDelete.length} 条最旧记录，保留 10 条`)
+    }
 
     res.json({
       success: true,
