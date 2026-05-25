@@ -1384,12 +1384,28 @@ const parseRiskItems = (analysisText) => {
   // Pattern: 1、Title or [1] Title
   const pattern2 = /(?:\[(\d+)\]|(\d+)[、.．]\s*)(.+?)(?=\n|$)/gm
 
+  // Parse coordinate pattern: x: 35%, y: 60% or x:35%, y:60%
+  const coordPattern = /x[:\s]*(\d+(?:\.\d+)?)\s*%\s*,\s*y[:\s]*(\d+(?:\.\d+)?)\s*%/i
+
   for (const match of analysisText.matchAll(pattern1)) {
     const num = parseInt(match[1] || match[2], 10)
     const title = match[3].trim()
     if (num && !seen.has(num) && title) {
       seen.add(num)
-      items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title) })
+      // Look for coordinates in the next few lines after this item
+      const itemStart = match.index
+      const nextItemMatch = analysisText.substring(itemStart + 1).match(/#{1,3}\s*(?:\[\d+\]|\d+)\s*.+/g)
+      const itemEnd = nextItemMatch ? itemStart + 1 + nextItemMatch[0].index : analysisText.length
+      const itemBlock = analysisText.substring(itemStart, itemEnd)
+      const coordMatch = itemBlock.match(coordPattern)
+
+      items.push({
+        num,
+        title: title.substring(0, 60),
+        level: detectRiskLevel(title),
+        coordX: coordMatch ? parseFloat(coordMatch[1]) / 100 : null,
+        coordY: coordMatch ? parseFloat(coordMatch[2]) / 100 : null
+      })
     }
   }
 
@@ -1399,7 +1415,7 @@ const parseRiskItems = (analysisText) => {
       const title = match[3].trim()
       if (num && num >= 1 && num <= 30 && !seen.has(num) && title && title.length < 100) {
         seen.add(num)
-        items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title) })
+        items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title), coordX: null, coordY: null })
       }
     }
   }
@@ -1407,7 +1423,7 @@ const parseRiskItems = (analysisText) => {
   items.sort((a, b) => a.num - b.num)
 
   if (items.length === 0) {
-    items.push({ num: 1, title: 'AI分析 - 详见报告', level: 'info' })
+    items.push({ num: 1, title: 'AI分析 - 详见报告', level: 'info', coordX: 0.5, coordY: 0.5 })
   }
 
   return items
@@ -1538,60 +1554,76 @@ const annotateImage = async (imageBase64, analysisText) => {
     // Draw original image
     ctx.drawImage(img, 0, 0, width, height)
 
-    // Calculate marker positions (same grid as Python)
-    const positions = calculatePositions(riskItems.length, width, height)
+    // Calculate marker positions - use AI coordinates if available, fallback to grid
+    const positions = calculatePositions(riskItems, width, height)
 
-    // Scale marker size
-    const markerSize = Math.max(20, Math.min(width, height) / 20)
-    const fontSize = Math.max(12, markerSize - 2)
+    // Fixed font sizes - readable but not too large
+    const markerRadius = 18
+    const numberFontSize = 14
+    const labelFontSize = 12
 
-    // Risk colors (RGBA)
+    // Risk colors - now used for both circle and label background
     const RISK_COLORS = {
-      high:   'rgba(220, 38, 38, 0.85)',
-      medium: 'rgba(234, 179, 8, 0.85)',
-      low:    'rgba(34, 197, 94, 0.85)',
-      info:   'rgba(107, 114, 128, 0.8)',
+      high:   { circle: 'rgba(220, 38, 38, 0.9)', label: 'rgba(220, 38, 38, 0.85)' },
+      medium: { circle: 'rgba(234, 179, 8, 0.9)', label: 'rgba(234, 179, 8, 0.85)' },
+      low:    { circle: 'rgba(34, 197, 94, 0.9)', label: 'rgba(34, 197, 94, 0.85)' },
+      info:   { circle: 'rgba(107, 114, 128, 0.85)', label: 'rgba(107, 114, 128, 0.8)' },
     }
 
     // Draw markers
     riskItems.forEach((item, i) => {
       const [x, y] = positions[i]
-      const color = RISK_COLORS[item.level] || RISK_COLORS.info
-      const r = markerSize
+      const colors = RISK_COLORS[item.level] || RISK_COLORS.info
+      const r = markerRadius
 
-      // Draw circle
+      // Draw circle with risk color
       ctx.beginPath()
       ctx.arc(x, y, r, 0, Math.PI * 2)
-      ctx.fillStyle = color
+      ctx.fillStyle = colors.circle
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.lineWidth = 2.5
       ctx.stroke()
 
-      // Draw number
-      ctx.font = `bold ${fontSize}px NotoSansSC, Arial`
+      // Draw number in center
+      ctx.font = `bold ${numberFontSize}px NotoSansSC, Arial`
       ctx.fillStyle = '#FFFFFF'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(item.num), x, y)
 
-      // Draw label below
-      const label = `${item.num}. ${item.title.substring(0, 25)}`
-      ctx.font = `${fontSize - 2}px NotoSansSC, Arial`
+      // Draw label with colored background matching risk level
+      const label = `${item.num}. ${item.title.substring(0, 30)}`
+      ctx.font = `${labelFontSize}px NotoSansSC, Arial`
       const labelWidth = ctx.measureText(label).width
 
-      // Label background
-      const pad = 4
-      const labelY = y + r + 4
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+      // Position label below the circle
+      const pad = 5
+      const labelH = labelFontSize + pad * 2
+      const labelW = labelWidth + pad * 2
+      const labelX = x - labelW / 2
+      const labelY = y + r + 5
+
+      // Ensure label stays within image bounds
+      const safeLabelX = Math.max(2, Math.min(labelX, width - labelW - 2))
+      const safeLabelY = Math.max(2, Math.min(labelY, height - labelH - 2))
+
+      // Draw label background with risk color
+      ctx.fillStyle = colors.label
       ctx.beginPath()
-      ctx.roundRect(x - labelWidth / 2 - pad, labelY - pad, labelWidth + pad * 2, fontSize + pad * 2, 4)
+      ctx.roundRect(safeLabelX, safeLabelY, labelW, labelH, 4)
       ctx.fill()
 
-      // Label text
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+      // Add subtle border for better visibility
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+
+      // Draw label text in white
+      ctx.fillStyle = '#FFFFFF'
+      ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(label, x - labelWidth / 2, labelY)
+      ctx.fillText(label, safeLabelX + pad, safeLabelY + pad)
     })
 
     // Convert to base64
@@ -1606,30 +1638,40 @@ const annotateImage = async (imageBase64, analysisText) => {
 }
 
 /**
- * Calculate marker positions on the image (grid distribution).
+ * Calculate marker positions on the image.
+ * Uses AI-provided coordinates if available, falls back to grid distribution.
  */
-const calculatePositions = (numItems, imageWidth, imageHeight) => {
+const calculatePositions = (riskItems, imageWidth, imageHeight) => {
   const positions = []
 
-  if (numItems <= 1) {
-    return [[Math.floor(imageWidth / 2), Math.floor(imageHeight / 2)]]
-  }
-
-  const cols = Math.max(2, Math.floor(Math.sqrt(numItems)))
-  const rows = Math.ceil(numItems / cols)
-
-  const marginX = Math.floor(imageWidth / 6)
-  const marginY = Math.floor(imageHeight / 6)
-  const usableW = imageWidth - 2 * marginX
-  const usableH = imageHeight - 2 * marginY
-
-  for (let i = 0; i < numItems; i++) {
-    const row = Math.floor(i / cols)
-    const col = i % cols
-    const x = Math.floor(marginX + (col + 0.5) * usableW / cols)
-    const y = Math.floor(marginY + (row + 0.5) * usableH / rows)
-    positions.push([x, y])
-  }
+  riskItems.forEach((item, i) => {
+    // If AI provided coordinates, use them
+    if (item.coordX !== null && item.coordY !== null) {
+      positions.push([
+        Math.floor(item.coordX * imageWidth),
+        Math.floor(item.coordY * imageHeight)
+      ])
+    } else {
+      // Fallback to grid distribution for items without coordinates
+      const numItems = riskItems.length
+      if (numItems <= 1) {
+        positions.push([Math.floor(imageWidth / 2), Math.floor(imageHeight / 2)])
+      } else {
+        const cols = Math.max(2, Math.floor(Math.sqrt(numItems)))
+        const rows = Math.ceil(numItems / cols)
+        const marginX = Math.floor(imageWidth / 6)
+        const marginY = Math.floor(imageHeight / 6)
+        const usableW = imageWidth - 2 * marginX
+        const usableH = imageHeight - 2 * marginY
+        const row = Math.floor(i / cols)
+        const col = i % cols
+        positions.push([
+          Math.floor(marginX + (col + 0.5) * usableW / cols),
+          Math.floor(marginY + (row + 0.5) * usableH / rows)
+        ])
+      }
+    }
+  })
 
   return positions
 }
