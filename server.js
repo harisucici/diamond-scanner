@@ -5,8 +5,6 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 // SQLite removed - using LanceDB
 import fetch from 'node-fetch'
 import cron from 'node-cron'
@@ -1373,7 +1371,55 @@ const handleChatWithProducts = async (req, res) => {
 // CAD Analysis API — /api/cad/analyze
 // ============================================================
 
-const execAsync = promisify(exec)
+/**
+ * Parse risk items from AI analysis text.
+ * Same patterns as the Python script.
+ */
+const parseRiskItems = (analysisText) => {
+  const items = []
+  const seen = new Set()
+
+  // Pattern: ### 1 Title or ### [1] Title
+  const pattern1 = /#{1,3}\s*(?:\[(\d+)\]|(\d+))\s*(.+?)(?=\n|$)/gm
+  // Pattern: 1、Title or [1] Title
+  const pattern2 = /(?:\[(\d+)\]|(\d+)[、.．]\s*)(.+?)(?=\n|$)/gm
+
+  for (const match of analysisText.matchAll(pattern1)) {
+    const num = parseInt(match[1] || match[2], 10)
+    const title = match[3].trim()
+    if (num && !seen.has(num) && title) {
+      seen.add(num)
+      items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title) })
+    }
+  }
+
+  if (items.length === 0) {
+    for (const match of analysisText.matchAll(pattern2)) {
+      const num = parseInt(match[1] || match[2], 10)
+      const title = match[3].trim()
+      if (num && num >= 1 && num <= 30 && !seen.has(num) && title && title.length < 100) {
+        seen.add(num)
+        items.push({ num, title: title.substring(0, 60), level: detectRiskLevel(title) })
+      }
+    }
+  }
+
+  items.sort((a, b) => a.num - b.num)
+
+  if (items.length === 0) {
+    items.push({ num: 1, title: 'AI分析 - 详见报告', level: 'info' })
+  }
+
+  return items
+}
+
+const detectRiskLevel = (text) => {
+  const low = text.toLowerCase()
+  if (/🔴|high|严重|高风险|断裂|掉石|无法/.test(low)) return 'high'
+  if (/🟡|medium|中风险|中等|可能/.test(low)) return 'medium'
+  if (/🟢|low|低风险|轻微|细节/.test(low)) return 'low'
+  return 'info'
+}
 
 /**
  * Load alice.md system prompt for CAD analysis.
@@ -1453,74 +1499,139 @@ const callGLM4V = async (imageBase64, systemPrompt, userPrompt) => {
 }
 
 /**
- * Annotate image with risk markers using Python + Pillow.
- * Falls back to original image if Pillow is unavailable.
+ * Annotate image with risk markers using node-canvas (pure JS, no Python needed).
  * @param {string} imageBase64 - Original image as base64
  * @param {string} analysisText - AI analysis text containing numbered risk items
  * @returns {Promise<string>} Annotated image as base64
  */
 const annotateImage = async (imageBase64, analysisText) => {
-  const scriptPath = join(__dirname, 'scripts', 'annotate_risks.py')
-
-  if (!fs.existsSync(scriptPath)) {
-    console.log('[annotateImage] Script not found:', scriptPath)
-    return imageBase64
-  }
-
-  // Use temp files instead of command-line args (avoids shell arg length limits)
-  const tmpDir = join(__dirname, 'tmp')
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-
-  const imageFile = join(tmpDir, `cad_input_${Date.now()}.b64`)
-  const analysisFile = join(tmpDir, `cad_analysis_${Date.now()}.txt`)
-  const outputFile = join(tmpDir, `cad_output_${Date.now()}.b64`)
-
   try {
-    // Write input files
-    fs.writeFileSync(imageFile, imageBase64, 'utf-8')
-    fs.writeFileSync(analysisFile, analysisText, 'utf-8')
+    const { createCanvas, loadImage, registerFont } = await import('canvas')
 
-    const cmd = `python3 '${scriptPath}' --image-file '${imageFile}' --analysis-file '${analysisFile}' --output '${outputFile}'`
-    console.log('[annotateImage] Running:', cmd)
+    // Register CJK font
+    const fontPath = join(__dirname, 'assets', 'fonts', 'NotoSansSC-Regular.ttf')
+    if (fs.existsSync(fontPath)) {
+      registerFont(fontPath, { family: 'NotoSansSC' })
+      console.log('[annotate] Font registered:', fontPath)
+    } else {
+      console.log('[annotate] Font NOT found:', fontPath)
+    }
 
-    const { stdout, stderr } = await execAsync(cmd, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      cwd: __dirname
+    // Parse risk items
+    const riskItems = parseRiskItems(analysisText)
+    console.log(`[annotate] Parsed ${riskItems.length} risk items`)
+
+    // Clean and decode image
+    let cleanBase64 = imageBase64
+    if (cleanBase64.includes(',')) {
+      cleanBase64 = cleanBase64.split(',')[1]
+    }
+
+    const img = await loadImage(Buffer.from(cleanBase64, 'base64'))
+    const width = img.width
+    const height = img.height
+
+    // Create canvas
+    const canvas = createCanvas(width, height)
+    const ctx = canvas.getContext('2d')
+
+    // Draw original image
+    ctx.drawImage(img, 0, 0, width, height)
+
+    // Calculate marker positions (same grid as Python)
+    const positions = calculatePositions(riskItems.length, width, height)
+
+    // Scale marker size
+    const markerSize = Math.max(20, Math.min(width, height) / 20)
+    const fontSize = Math.max(12, markerSize - 2)
+
+    // Risk colors (RGBA)
+    const RISK_COLORS = {
+      high:   'rgba(220, 38, 38, 0.85)',
+      medium: 'rgba(234, 179, 8, 0.85)',
+      low:    'rgba(34, 197, 94, 0.85)',
+      info:   'rgba(107, 114, 128, 0.8)',
+    }
+
+    // Draw markers
+    riskItems.forEach((item, i) => {
+      const [x, y] = positions[i]
+      const color = RISK_COLORS[item.level] || RISK_COLORS.info
+      const r = markerSize
+
+      // Draw circle
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      // Draw number
+      ctx.font = `bold ${fontSize}px NotoSansSC, Arial`
+      ctx.fillStyle = '#FFFFFF'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(item.num), x, y)
+
+      // Draw label below
+      const label = `${item.num}. ${item.title.substring(0, 25)}`
+      ctx.font = `${fontSize - 2}px NotoSansSC, Arial`
+      const labelWidth = ctx.measureText(label).width
+
+      // Label background
+      const pad = 4
+      const labelY = y + r + 4
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+      ctx.beginPath()
+      ctx.roundRect(x - labelWidth / 2 - pad, labelY - pad, labelWidth + pad * 2, fontSize + pad * 2, 4)
+      ctx.fill()
+
+      // Label text
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.textBaseline = 'top'
+      ctx.fillText(label, x - labelWidth / 2, labelY)
     })
 
-    if (stderr) {
-      console.log('[annotateImage] stderr (first 500):', stderr.substring(0, 500))
-      if (stderr.includes('Pillow') || stderr.includes('annotate')) {
-        console.log('[annotateImage] Relevant stderr lines:')
-        stderr.split('\n').filter(l => l.includes('Pillow') || l.includes('annotate')).forEach(l => console.log('  ', l))
-      }
-    }
+    // Convert to base64
+    const annotatedBase64 = canvas.toBuffer('image/png').toString('base64')
+    console.log(`[annotate] Success, output length: ${annotatedBase64.length}`)
+    return annotatedBase64
 
-    // Read output from file
-    if (fs.existsSync(outputFile)) {
-      const result = fs.readFileSync(outputFile, 'utf-8').trim()
-      if (result.length > 100) {
-        console.log('[annotateImage] Success, output length:', result.length)
-        return result
-      }
-      console.log('[annotateImage] Output too short, returning original')
-    } else {
-      console.log('[annotateImage] Output file not created')
-    }
-
-    return imageBase64
   } catch (err) {
-    console.log('[annotateImage] Error:', err.message)
+    console.log('[annotate] Error:', err.message)
     return imageBase64
-  } finally {
-    // Clean up temp files
-    try {
-      if (fs.existsSync(imageFile)) fs.unlinkSync(imageFile)
-      if (fs.existsSync(analysisFile)) fs.unlinkSync(analysisFile)
-      if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile)
-    } catch (e) { /* ignore cleanup errors */ }
   }
+}
+
+/**
+ * Calculate marker positions on the image (grid distribution).
+ */
+const calculatePositions = (numItems, imageWidth, imageHeight) => {
+  const positions = []
+
+  if (numItems <= 1) {
+    return [[Math.floor(imageWidth / 2), Math.floor(imageHeight / 2)]]
+  }
+
+  const cols = Math.max(2, Math.floor(Math.sqrt(numItems)))
+  const rows = Math.ceil(numItems / cols)
+
+  const marginX = Math.floor(imageWidth / 6)
+  const marginY = Math.floor(imageHeight / 6)
+  const usableW = imageWidth - 2 * marginX
+  const usableH = imageHeight - 2 * marginY
+
+  for (let i = 0; i < numItems; i++) {
+    const row = Math.floor(i / cols)
+    const col = i % cols
+    const x = Math.floor(marginX + (col + 0.5) * usableW / cols)
+    const y = Math.floor(marginY + (row + 0.5) * usableH / rows)
+    positions.push([x, y])
+  }
+
+  return positions
 }
 
 /**

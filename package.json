@@ -17,6 +17,7 @@
   "dependencies": {
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@lancedb/lancedb": "^0.27.2",
+    "canvas": "^3.2.3",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.18.0",
