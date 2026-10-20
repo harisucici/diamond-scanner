@@ -1,79 +1,72 @@
 <template>
   <div class="necklace-sales">
-    <!-- 页面标题 -->
-    <div class="page-title">
-      <h1>💍 日本配饰销量排行</h1>
-      <p class="subtitle">日本各大购物平台配饰销量TOP10</p>
-    </div>
+    <!-- 页面标题区 (左对齐 ANTI-CENTER BIAS) -->
+    <header class="header">
+      <h1 class="header-title">配饰销量排行</h1>
+      <p class="header-subtitle">日本各大购物平台配饰销量 TOP 排名</p>
+    </header>
 
     <!-- 控制栏 -->
     <div class="controls">
       <div class="control-group">
-        <label>📅</label>
-        <input type="month" v-model="selectedMonth" @change="loadData" :min="minMonth" :max="maxMonth" />
+        <label>月份</label>
+        <input
+          type="month"
+          v-model="selectedMonth"
+          @change="loadData"
+          :min="minMonth"
+          :max="maxMonth"
+          class="control-input"
+        />
       </div>
 
       <div class="control-group">
-        <label>🏷️</label>
-        <select v-model="selectedCategory" @change="loadData">
+        <label>品类</label>
+        <select v-model="selectedCategory" @change="loadData" class="control-input">
           <option value="">全部品类</option>
           <option v-for="cat in categories" :key="cat" :value="cat">{{ formatCategory(cat) }}</option>
         </select>
       </div>
 
       <div class="control-group search-group">
-        <input type="text" v-model="searchKeyword" placeholder="搜索商品名称、品牌..." @input="loadData" />
+        <input
+          type="text"
+          v-model="searchKeyword"
+          placeholder="搜索商品名称、品牌..."
+          @input="loadData"
+          class="control-input"
+        />
       </div>
 
       <div class="view-toggle">
-        <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">📊</button>
-        <button :class="{ active: viewMode === 'card' }" @click="viewMode = 'card'">🃏</button>
-        <button :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">📈</button>
+        <button :class="{ active: viewMode === 'grid' }" @click="viewMode = 'grid'">网格</button>
+        <button :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'">列表</button>
+        <button :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">表格</button>
       </div>
 
       <button class="refresh-btn" @click="refreshMonth" :disabled="refreshing">
-        {{ refreshing ? '...' : '🔄' }}
-      </button>
-      <button class="debug-btn" @click="showDebug = !showDebug" title="调试信息">
-        🔧
+        {{ refreshing ? '刷新中' : '刷新' }}
       </button>
     </div>
 
-    <div class="stats-overview" v-if="stats">
-      <!-- Loading 对话框 -->
-      <div v-if="refreshing" class="loading-overlay">
-        <div class="loading-dialog">
-          <div class="spinner-large"></div>
-          <p>正在刷新 {{ formatMonth(selectedMonth) }} 的数据...</p>
-        </div>
+    <!-- 数据源切换 -->
+    <div class="source-bar" v-if="stats">
+      <div class="source-bar-title">数据源</div>
+      <div class="source-list">
+        <button
+          v-for="s in allSources"
+          :key="s.id"
+          :class="['source-chip', s.enabled ? 'enabled' : 'disabled']"
+          @click="toggleSource(s.id)"
+        >
+          <span class="source-name">{{ s.name }}</span>
+          <span class="source-dot">{{ s.enabled ? '●' : '○' }}</span>
+        </button>
       </div>
+    </div>
 
-      <!-- 调试面板 -->
-      <div v-if="showDebug && debugLogs.length > 0" class="debug-panel">
-        <div class="debug-header">
-          <h4>🔧 调试信息</h4>
-          <button class="debug-close" @click="showDebug = false">✕</button>
-        </div>
-        <div class="debug-content">
-          <div v-for="(log, index) in debugLogs" :key="index" class="debug-item" :class="log.success ? 'success' : 'error'">
-            <div class="debug-title">
-              <span class="debug-name">{{ log.name }}</span>
-              <span class="debug-status">{{ log.success ? '✅' : '❌' }}</span>
-            </div>
-            <div class="debug-info">
-              <span>数量: {{ log.count }}</span>
-              <span>耗时: {{ log.duration }}ms</span>
-            </div>
-            <div v-if="log.error" class="debug-error">错误: {{ log.error }}</div>
-            <pre v-if="log.raw" class="debug-raw">{{ JSON.stringify(log.raw, null, 2) }}</pre>
-            <pre v-if="log.fullData && log.fullData.length > 0" class="debug-raw debug-full">完整数据(前5条):
-{{ JSON.stringify(log.fullData, null, 2) }}</pre>
-            <pre v-if="log.raw && log.raw.debugHtml" class="debug-raw debug-html">原始HTML:
-{{ log.raw.debugHtml }}</pre>
-          </div>
-        </div>
-      </div>
-
+    <!-- 统计概览 -->
+    <div class="stats-row" v-if="stats">
       <div class="stat-card">
         <div class="stat-value">{{ stats.totalRecords }}</div>
         <div class="stat-label">数据条目</div>
@@ -83,101 +76,218 @@
         <div class="stat-label">总销量</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ Object.keys(stats.byWebsite).length }}</div>
+        <div class="stat-value">{{ Object.keys(stats.byWebsite).length || enabledSources.length }}</div>
         <div class="stat-label">购物网站</div>
       </div>
     </div>
 
-    <!-- 数据源状态 -->
-    <div class="source-status">
-      <div class="source-status-title">📊 数据源</div>
-      <div class="source-status-grid">
-        <div v-for="s in allSources" :key="s.id" :class="['source-status-card', s.enabled ? 'enabled' : 'disabled']">
-          <span class="source-icon">{{ s.icon }}</span>
-          <span class="source-name">{{ s.name }}</span>
-          <span class="source-toggle" @click="toggleSource(s.id)">{{ s.enabled ? '✓' : '○' }}</span>
+    <!-- Loading 遮罩 (刷新) -->
+    <div v-if="refreshing" class="loading-overlay">
+      <div class="loading-dialog">
+        <div class="spinner-large"></div>
+        <p>正在刷新 {{ formatMonth(selectedMonth) }} 的数据...</p>
+      </div>
+    </div>
+
+    <!-- 调试面板 -->
+    <div v-if="showDebug && debugLogs.length > 0" class="debug-panel">
+      <div class="debug-header">
+        <h4>调试信息</h4>
+        <button class="debug-close" @click="showDebug = false">×</button>
+      </div>
+      <div class="debug-content">
+        <div
+          v-for="(log, index) in debugLogs"
+          :key="index"
+          class="debug-item"
+          :class="log.success ? 'success' : 'error'"
+        >
+          <div class="debug-title">
+            <span class="debug-name">{{ log.name }}</span>
+            <span class="debug-status">{{ log.success ? 'OK' : 'FAIL' }}</span>
+          </div>
+          <div class="debug-info">
+            <span>数量: {{ log.count }}</span>
+            <span>耗时: {{ log.duration }}ms</span>
+          </div>
+          <div v-if="log.error" class="debug-error">错误: {{ log.error }}</div>
         </div>
       </div>
     </div>
 
+    <!-- 主数据区 -->
     <div class="data-container">
-      <div v-if="loading" class="loading">
-        <div class="spinner"></div>
-        <p>加载中...</p>
+      <!-- Loading 骨架屏 -->
+      <div v-if="loading" class="skeleton-list">
+        <div v-for="i in 8" :key="i" class="skeleton-card" :style="{ animationDelay: `${i * 80}ms` }">
+          <div class="skeleton-image"></div>
+          <div class="skeleton-content">
+            <div class="skeleton-line long"></div>
+            <div class="skeleton-line medium"></div>
+            <div class="skeleton-line short"></div>
+          </div>
+          <div class="skeleton-rank"></div>
+        </div>
       </div>
 
-      <div v-else-if="viewMode === 'table'" class="table-view">
-        <table>
+      <!-- Empty 空态 -->
+      <div v-else-if="filteredData.length === 0" class="empty-state">
+        <div class="empty-icon"></div>
+        <div class="empty-text">暂无数据</div>
+        <div class="empty-hint">请切换月份、品类或刷新数据</div>
+      </div>
+
+      <!-- 网格视图 (横向滚动) -->
+      <div
+        v-else-if="viewMode === 'grid'"
+        class="rank-grid"
+      >
+        <div
+          v-for="(item, idx) in filteredData"
+          :key="item.id || idx"
+          class="rank-card"
+          :style="{ animationDelay: `${idx * 100}ms`, '--index': idx }"
+          @click="openItemUrl(item.url)"
+        >
+          <div class="rank-card-image-wrap">
+            <img
+              v-if="item.image || item.imageUrl || item.image_url"
+              :src="item.image || item.imageUrl || item.image_url"
+              :alt="item.productName"
+              class="rank-card-image"
+            />
+            <div v-else class="rank-card-image-placeholder"></div>
+          </div>
+
+          <div class="rank-card-body">
+            <div class="rank-card-source">{{ item._source || item.website || item.platform }}</div>
+            <h3 class="rank-card-name">{{ item.productName || item.product_name }}</h3>
+            <div class="rank-card-brand">{{ item.brand }}</div>
+            <div class="rank-card-meta">
+              <span class="rank-card-price">
+                <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
+                  ${{ formatNumber(item.price) }}
+                </template>
+                <template v-else>{{ item.priceRange || '¥' + formatNumber(item.price) }}</template>
+              </span>
+              <span class="rank-card-sales">
+                <template v-if="item._source === 'Fashionphile'">—</template>
+                <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
+                <template v-else>{{ formatNumber(item.sales) }}</template>
+              </span>
+            </div>
+          </div>
+
+          <div
+            class="rank-card-badge"
+            :class="{ 'rank-gold': item.rank <= 3 }"
+          >
+            {{ item.rank }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 列表视图 (水平滚动卡片) -->
+      <div
+        v-else-if="viewMode === 'list'"
+        class="rank-list"
+      >
+        <div
+          v-for="(item, idx) in filteredData"
+          :key="item.id || idx"
+          class="rank-row"
+          :style="{ animationDelay: `${idx * 100}ms`, '--index': idx }"
+          @click="openItemUrl(item.url)"
+        >
+          <div class="rank-row-image-wrap">
+            <img
+              v-if="item.image || item.imageUrl || item.image_url"
+              :src="item.image || item.imageUrl || item.image_url"
+              :alt="item.productName"
+              class="rank-row-image"
+            />
+            <div v-else class="rank-row-image-placeholder"></div>
+          </div>
+
+          <div class="rank-row-body">
+            <div class="rank-row-source">{{ item._source || item.website || item.platform }}</div>
+            <h3 class="rank-row-name">{{ item.productName || item.product_name }}</h3>
+            <div class="rank-row-brand">{{ item.brand }}</div>
+          </div>
+
+          <div class="rank-row-stats">
+            <div class="rank-row-price">
+              <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
+                ${{ formatNumber(item.price) }}
+              </template>
+              <template v-else>{{ item.priceRange || '¥' + formatNumber(item.price) }}</template>
+            </div>
+            <div class="rank-row-sales">
+              <template v-if="item._source === 'Fashionphile'">—</template>
+              <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
+              <template v-else>{{ formatNumber(item.sales) }}</template>
+            </div>
+          </div>
+
+          <div
+            class="rank-row-badge"
+            :class="{ 'rank-gold': item.rank <= 3 }"
+          >
+            {{ item.rank }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 表格视图 -->
+      <div v-else-if="viewMode === 'table'" class="rank-table-wrap">
+        <table class="rank-table">
           <thead>
             <tr>
-              <th>排名</th>
-              <th>网站</th>
-              <th>商品名称</th>
-              <th>品牌</th>
-              <th>价格</th>
-              <th>销量</th>
+              <th class="col-rank">排名</th>
+              <th class="col-source">网站</th>
+              <th class="col-name">商品名称</th>
+              <th class="col-brand">品牌</th>
+              <th class="col-price">价格</th>
+              <th class="col-sales">销量</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in filteredData" :key="item.id" @click="openItemUrl(item.url)" style="cursor: pointer" title="点击查看商品详情">
-              <td><span class="rank" :class="'rank-' + item.rank">{{ item.rank }}</span></td>
-              <td>{{ item._source || item.website }}</td>
-              <td>{{ item.productName }}</td>
+            <tr
+              v-for="(item, idx) in filteredData"
+              :key="item.id || idx"
+              :style="{ animationDelay: `${idx * 80}ms` }"
+              @click="openItemUrl(item.url)"
+              class="rank-table-row"
+            >
+              <td>
+                <span
+                  class="rank-num"
+                  :class="{ 'rank-gold': item.rank <= 3 }"
+                >{{ item.rank }}</span>
+              </td>
+              <td>{{ item._source || item.website || item.platform }}</td>
+              <td>{{ item.productName || item.product_name }}</td>
               <td>{{ item.brand }}</td>
-              <!-- 根据数据源显示不同内容 -->
-              <td v-if="item._source === 'Fashionphile' || item._source === 'eBay'">${{ formatNumber(item.price) }}</td>
-              <td v-else>{{ item.priceRange }}</td>
-              <td v-if="item._source === 'Fashionphile'" class="sales">-</td>
-              <td v-else-if="item._source === 'eBay'" class="sales">{{ item.condition || '-' }}</td>
-              <td v-else class="sales">{{ formatNumber(item.sales) }}</td>
+              <td class="mono">
+                <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
+                  ${{ formatNumber(item.price) }}
+                </template>
+                <template v-else>{{ item.priceRange || formatNumber(item.price) }}</template>
+              </td>
+              <td class="mono">
+                <template v-if="item._source === 'Fashionphile'">—</template>
+                <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
+                <template v-else>{{ formatNumber(item.sales) }}</template>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
+    </div>
 
-      <div v-else-if="viewMode === 'card'" class="card-view">
-        <div 
-          v-for="item in filteredData" 
-          :key="item.id" 
-          class="product-card" 
-          :class="'rank-' + item.rank"
-          @click="openItemUrl(item.url)"
-          style="cursor: pointer"
-          title="点击查看商品详情"
-        >
-          <div class="card-rank">{{ item.rank }}</div>
-          <div class="card-image-wrap">
-            <img v-if="item.image" :src="item.image" :alt="item.productName" class="card-image" />
-          </div>
-          <div class="card-content">
-            <div class="card-website">{{ item._source || item.website }}</div>
-            <h3 class="card-product">{{ item.productName }}</h3>
-            <div class="card-brand">🏷️ {{ item.brand }}</div>
-            <!-- 根据数据源显示不同内容 -->
-            <div v-if="item._source === 'Fashionphile' || item._source === 'eBay'" class="card-price">💰 ${{ formatNumber(item.price) }} {{ item.currency }}</div>
-            <div v-else class="card-price">💰 {{ item.priceRange }}</div>
-            <div v-if="item._source === 'Fashionphile'" class="card-sales">💎 奢侈品包</div>
-            <div v-else-if="item._source === 'eBay'" class="card-sales">🔗 {{ item.condition || 'eBay商品' }}</div>
-            <div v-else class="card-sales">📈 销量: {{ formatNumber(item.sales) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="viewMode === 'chart'" class="chart-view">
-        <div class="chart-container">
-          <h3>📊 销量排名TOP10</h3>
-          <div class="bar-chart">
-            <div v-for="item in filteredData" :key="item.id" class="bar-item">
-              <div class="bar-label">{{ item.rank }}. {{ item.brand }}</div>
-              <div class="bar-container">
-                <div class="bar" :style="{ width: ((item._source === 'Fashionphile' || item._source === 'eBay' ? item.price : item.sales) / maxSales * 100) + '%' }">
-                  <span class="bar-value">{{ item._source === 'Fashionphile' || item._source === 'eBay' ? '$' + formatNumber(item.price) : formatNumber(item.sales) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- 调试按钮 -->
+    <div class="debug-fab">
+      <button class="debug-btn" @click="showDebug = !showDebug" title="调试信息">DBG</button>
     </div>
   </div>
 </template>
@@ -190,7 +300,7 @@ export default {
   setup() {
     const loading = ref(false)
     const refreshing = ref(false)
-    const viewMode = ref('table')
+    const viewMode = ref('grid')
     const showDebug = ref(false)
     const debugLogs = ref([])
     const selectedMonth = ref('')
@@ -201,20 +311,17 @@ export default {
     const availableMonths = ref([])
     const categories = ref([])
 
-    // 数据源配置 (包含BUYMA、Fashionphile和eBay)
     const allSources = ref([
-      { id: 'buyma', name: 'BUYMA', icon: '🛍️', enabled: true, api: '/api/necklaces' },
-      { id: 'fashionphile', name: 'Fashionphile', icon: '💎', enabled: true, api: '/api/fashionphile' },
-      { id: 'ebay', name: 'eBay', icon: '🔗', enabled: true, api: '/api/ebay' }
+      { id: 'buyma', name: 'BUYMA', enabled: true, api: '/api/necklaces' },
+      { id: 'fashionphile', name: 'Fashionphile', enabled: true, api: '/api/fashionphile' },
+      { id: 'ebay', name: 'eBay', enabled: true, api: '/api/ebay' }
     ])
 
-    // 启用的数据源
     const enabledSources = computed(() => allSources.value.filter(s => s.enabled))
 
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
       return Math.max(...data.value.map(item => {
-        // Fashionphile 和 eBay 用 price，其他用 sales
         if (item._source === 'Fashionphile' || item._source === 'eBay') {
           return item.price || 0
         }
@@ -222,9 +329,8 @@ export default {
       }))
     })
 
-    // 可用月份范围 (动态从API获取)
     const minMonth = computed(() => availableMonths.value[0] || '2024-01')
-    const maxMonth = computed(() => availableMonths.value[availableMonths.value.length - 1] || '2026-04')
+    const maxMonth = computed(() => availableMonths.value[availableMonths.value.length - 1] || '2026-12')
 
     const filteredData = computed(() => {
       if (!searchKeyword.value) return data.value || []
@@ -246,7 +352,6 @@ export default {
       return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
     }
 
-    // 品类格式化
     const formatCategory = (cat) => {
       if (!cat) return ''
       const map = {
@@ -256,7 +361,6 @@ export default {
         '指輪・リング': '戒指',
         'アクセサリーその他': '其他配饰'
       }
-      // 支持完整路径或短名称
       const short = cat.includes('/') ? cat.split('/').pop() : cat
       return map[short] || cat
     }
@@ -273,87 +377,104 @@ export default {
     const loadData = async () => {
       loading.value = true
       try {
-        // 如果 selectedMonth 为空，使用当前月份作为兜底
         if (!selectedMonth.value || selectedMonth.value.trim() === '') {
           selectedMonth.value = new Date().toISOString().slice(0, 7)
         }
-        
-        // 加载品类列表 (只有 BUYMA 有品类)
+
         await loadCategories()
-        
-        // 从所有启用的数据源加载数据
+
         const allData = []
-        
-        for (const source of enabledSources.value) {
-          try {
-            let url = ''
-            
-            if (source.id === 'buyma') {
-              // BUYMA 使用月份参数
-              if (selectedCategory.value) {
-                url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+
+        // 优先尝试 /api/lancedb/query
+        try {
+          const lancedbRes = await fetch('/api/lancedb/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ month: selectedMonth.value, limit: 50 })
+          })
+          if (lancedbRes.ok) {
+            const lancedbData = await lancedbRes.json()
+            if (Array.isArray(lancedbData) || Array.isArray(lancedbData?.data)) {
+              const items = Array.isArray(lancedbData) ? lancedbData : lancedbData.data
+              items.forEach((item, i) => {
+                allData.push({
+                  ...item,
+                  id: item.id || `lancedb-${i}`,
+                  rank: item.rank || i + 1,
+                  _source: item.platform || 'LanceDB',
+                  productName: item.productName || item.product_name,
+                  image: item.image || item.image_url || item.imageUrl,
+                  url: item.url
+                })
+              })
+            }
+          }
+        } catch (e) {
+          // 兜底到原有数据源
+        }
+
+        // 原有数据源
+        if (allData.length === 0) {
+          for (const source of enabledSources.value) {
+            try {
+              let url = ''
+              if (source.id === 'buyma') {
+                if (selectedCategory.value) {
+                  url = `/api/necklaces/category/${selectedMonth.value}/${encodeURIComponent(selectedCategory.value)}`
+                } else {
+                  url = `${source.api}?month=${selectedMonth.value}`
+                }
               } else {
                 url = `${source.api}?month=${selectedMonth.value}`
               }
-            } else if (source.id === 'fashionphile') {
-              // Fashionphile 使用选中的月份
-              url = `${source.api}?month=${selectedMonth.value}`
-            } else if (source.id === 'ebay') {
-              // eBay 使用选中的月份
-              url = `${source.api}?month=${selectedMonth.value}`
+
+              const response = await fetch(url)
+              const items = await response.json()
+
+              items.forEach((item, i) => {
+                const normalizedItem = { ...item, _source: source.name }
+
+                if (source.id === 'fashionphile') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                } else if (source.id === 'ebay') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || 'OTHER'
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                  normalizedItem.seller = item.seller
+                }
+
+                allData.push(normalizedItem)
+              })
+            } catch (e) {
+              console.warn(`加载 ${source.name} 失败:`, e)
             }
-            
-            const response = await fetch(url)
-            const items = await response.json()
-            
-            // 为每个数据添加来源标识，并统一数据格式
-            items.forEach(item => {
-              const normalizedItem = { ...item, _source: source.name }
-              
-              // 统一字段名
-              if (source.id === 'fashionphile') {
-                normalizedItem.productName = item.productName
-                normalizedItem.brand = item.brand
-                normalizedItem.price = item.price
-                normalizedItem.currency = item.currency || 'USD'
-                normalizedItem.url = item.url
-                normalizedItem.image = item.imageUrl
-              } else if (source.id === 'ebay') {
-                // eBay 数据统一字段
-                normalizedItem.productName = item.productName
-                normalizedItem.brand = item.brand || 'OTHER'
-                normalizedItem.price = item.price
-                normalizedItem.currency = item.currency || 'USD'
-                normalizedItem.url = item.url
-                normalizedItem.image = item.imageUrl
-                normalizedItem.condition = item.condition
-                normalizedItem.seller = item.seller
-              }
-              
-              allData.push(normalizedItem)
-            })
-          } catch (e) {
-            console.warn(`加载 ${source.name} 失败:`, e)
           }
         }
-        
+
+        // 计算排名
+        allData.forEach((item, i) => {
+          if (item.rank === undefined) item.rank = i + 1
+        })
+
         data.value = allData
-        
-        // 计算统计信息
+
         const totalRecords = allData.length
-        // BUYMA 用 sales，Fashionphile 和 eBay 用 price
         const totalSales = allData.reduce((sum, item) => {
           if (item._source === 'Fashionphile' || item._source === 'eBay') {
             return sum + (item.price || 0)
           }
           return sum + (item.sales || 0)
         }, 0)
-        stats.value = {
-          totalRecords,
-          totalSales,
-          byWebsite: {},
-          byCategory: {}
-        }
+        stats.value = { totalRecords, totalSales, byWebsite: {}, byCategory: {} }
       } catch (error) {
         console.error('加载数据失败:', error)
       } finally {
@@ -362,19 +483,14 @@ export default {
     }
 
     const loadMonths = async () => {
-      // 从所有启用的数据源获取可用月份
       const allMonths = new Set()
-      
       try {
-        // 获取 BUYMA 月份
         const response = await fetch('/api/necklaces/months')
         const months = await response.json()
         months.forEach(m => allMonths.add(m))
       } catch (error) {
         console.error('加载BUYMA月份失败:', error)
       }
-      
-      // 尝试获取 Fashionphile 月份
       try {
         const response = await fetch('/api/fashionphile/months')
         const months = await response.json()
@@ -382,8 +498,6 @@ export default {
       } catch (error) {
         console.error('加载Fashionphile月份失败:', error)
       }
-      
-      // 尝试获取 eBay 月份
       try {
         const response = await fetch('/api/ebay/months')
         const months = await response.json()
@@ -391,16 +505,15 @@ export default {
       } catch (error) {
         console.error('加载eBay月份失败:', error)
       }
-      
+
       availableMonths.value = Array.from(allMonths)
         .filter(m => m && m.trim() !== '')
         .sort()
         .reverse()
-      
-      // 默认选中最新月份，如果没有数据则使用当前月份
+
       const currentMonth = new Date().toISOString().slice(0, 7)
       selectedMonth.value = availableMonths.value[0] || currentMonth
-      
+
       await loadData()
     }
 
@@ -410,38 +523,31 @@ export default {
 
     const refreshMonth = async () => {
       refreshing.value = true
-      debugLogs.value = [] // 清空日志
-      
-      // 确定刷新用的月份 — 所有数据源统一使用当前月份
+      debugLogs.value = []
+
       const currentMonth = new Date().toISOString().slice(0, 7)
       selectedMonth.value = currentMonth
-      
+
       try {
-        // 刷新所有启用的数据源，收集新数据
         const refreshedData = []
-        
+
         for (const source of enabledSources.value) {
           const startTime = Date.now()
           try {
-            const refreshMonthValue = currentMonth
-            const refreshUrl = `${source.api}/refresh/${refreshMonthValue}`
-            
+            const refreshUrl = `${source.api}/refresh/${currentMonth}`
             const response = await fetch(refreshUrl, { method: 'POST' })
             const result = await response.json()
             const duration = Date.now() - startTime
-            
+
             debugLogs.value.push({
               name: source.name,
               success: result.success,
               count: result.count || 0,
               error: result.error || null,
               duration,
-              raw: result,
-              fullData: result.items ? result.items.slice(0, 5) : []
+              raw: result
             })
-            console.log(`${source.name} 刷新:`, result.success ? '成功' : '失败')
-            
-            // 直接使用刷新返回的 items，不再做额外 GET 请求
+
             if (result.items && result.items.length > 0) {
               result.items.forEach(item => {
                 const normalized = { ...item, _source: source.name }
@@ -472,18 +578,15 @@ export default {
               count: 0,
               error: e.message,
               duration: Date.now() - startTime,
-              raw: null,
-              fullData: []
+              raw: null
             })
-            console.warn(`刷新 ${source.name} 失败:`, e)
           }
         }
-        
-        // 直接使用刷新返回的数据更新页面
+
         if (refreshedData.length > 0) {
+          refreshedData.forEach((item, i) => { if (item.rank === undefined) item.rank = i + 1 })
           data.value = refreshedData
-          
-          // 更新统计
+
           const totalRecords = refreshedData.length
           const totalSales = refreshedData.reduce((sum, item) => {
             if (item._source === 'Fashionphile' || item._source === 'eBay') {
@@ -493,10 +596,8 @@ export default {
           }, 0)
           stats.value = { totalRecords, totalSales, byWebsite: {}, byCategory: {} }
         }
-        
-        // 重新加载品类列表
+
         await loadCategories()
-        
       } catch (error) {
         console.error('刷新数据失败:', error)
       } finally {
@@ -504,14 +605,10 @@ export default {
       }
     }
 
-    // 打开商品链接
     const openItemUrl = (url) => {
-      if (url) {
-        window.open(url, '_blank')
-      }
+      if (url) window.open(url, '_blank')
     }
 
-    // 切换数据源
     const toggleSource = (sourceId) => {
       const source = allSources.value.find(s => s.id === sourceId)
       if (source) {
@@ -522,7 +619,8 @@ export default {
 
     return {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
-      availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory, loadData, refreshMonth, openItemUrl,
+      availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory,
+      loadData, refreshMonth, openItemUrl,
       allSources, enabledSources, toggleSource,
       showDebug, debugLogs
     }
@@ -531,119 +629,608 @@ export default {
 </script>
 
 <style scoped>
-.necklace-sales { font-family: sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%); min-height: calc(100vh - 80px); color: #fff; }
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
 
-/* 页面标题 */
-.page-title { text-align: center; margin-bottom: 24px; }
-.page-title h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.page-title .subtitle { color: rgba(255,255,255,0.5); font-size: 1rem; }
-.controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.3); align-items: center; justify-content: center; position: relative; z-index: 1; }
-.control-group { display: flex; align-items: center; gap: 6px; }
-.control-group label { font-weight: 500; color: rgba(255,255,255,0.7); font-size: 0.85rem; }
-.control-group select, .control-group input { padding: 8px 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; min-width: 120px; font-size: 0.85rem; background: rgba(255,255,255,0.08); color: #fff; }
-.control-group input[type="month"] { cursor: pointer; }
-.search-group input { min-width: 250px; }
-.refresh-btn { padding: 8px 14px; background: linear-gradient(135deg, #00d4ff, #667eea); color: white; border: none; border-radius: 16px; cursor: pointer; font-weight: 600; font-size: 0.85rem; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
-.refresh-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,212,255,0.5); }
-.refresh-btn:disabled { background: #444; cursor: not-allowed; transform: none; box-shadow: none; }
-.view-toggle { display: flex; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: 16px; padding: 4px; }
-.view-toggle button { padding: 8px 12px; border: none; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 12px; transition: all 0.3s ease; font-size: 1rem; }
-.view-toggle button:hover { color: #fff; }
-.view-toggle button.active { background: linear-gradient(135deg, #00d4ff, #667eea); color: white; font-weight: 600; box-shadow: 0 4px 15px rgba(0,212,255,0.3); }
+.necklace-sales {
+  font-family: 'Noto Sans SC', sans-serif;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  background: #0a0a0f;
+  min-height: calc(100vh - 80px);
+  color: #f5f5f5;
+}
 
-.stats-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
-.stat-card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); padding: 20px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s ease; }
-.stat-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
-.stat-value { font-size: 1.8rem; font-weight: bold; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.stat-label { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+/* 标题区 左对齐 */
+.header {
+  margin-bottom: 28px;
+  text-align: left;
+}
+.header-title {
+  font-size: 2.25rem; /* text-4xl */
+  font-weight: 700;
+  letter-spacing: -0.025em; /* tracking-tight */
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  line-height: 1.1;
+}
+.header-subtitle {
+  font-size: 1rem;
+  color: #9ca3af; /* text-gray-400 */
+  margin: 0;
+}
 
-/* 数据源状态 */
-.source-status { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border-radius: 16px; padding: 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); }
-.source-status-title { font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-bottom: 12px; font-weight: 500; }
-.source-status-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.source-status-card { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
-.source-status-card.enabled { background: rgba(0, 212, 255, 0.15); border: 1px solid rgba(0, 212, 255, 0.3); }
-.source-status-card.disabled { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); opacity: 0.5; }
-.source-status-card:hover { transform: scale(1.02); }
-.source-icon { font-size: 1rem; }
-.source-name { color: rgba(255,255,255,0.9); }
-.source-toggle { margin-left: auto; color: #00d4ff; font-weight: bold; }
+/* 控制栏 */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.control-group label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+.control-input {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-size: 0.85rem;
+  min-width: 120px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+.control-input:focus {
+  outline: none;
+  border-color: #d4a574;
+}
+.search-group {
+  flex: 1;
+  min-width: 200px;
+}
+.search-group input {
+  width: 100%;
+  min-width: 200px;
+}
 
-/* Loading 对话框 */
-.loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.loading-dialog { background: linear-gradient(135deg, #1a1a2e, #302b63); padding: 40px; border-radius: 20px; text-align: center; border: 1px solid rgba(0,212,255,0.3); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-.spinner-large { width: 50px; height: 50px; border: 4px solid rgba(0,212,255,0.2); border-top: 4px solid #00d4ff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-.data-container { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border-radius: 20px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-.loading { text-align: center; padding: 60px; color: rgba(255,255,255,0.6); }
-.spinner { width: 50px; height: 50px; border: 4px solid rgba(0,212,255,0.2); border-top: 4px solid #00d4ff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.table-view { overflow-x: auto; }
-.table-view table { width: 100%; border-collapse: collapse; }
-.table-view th, .table-view td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
-.table-view th { background: rgba(102,126,234,0.3); color: #fff; }
-.rank { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; border-radius: 50%; font-weight: bold; color: white; }
-.rank-1 { background: #ffd700; }.rank-2 { background: #c0c0c0; }.rank-3 { background: #cd7f32; }
-.rank-4, .rank-5, .rank-6, .rank-7, .rank-8, .rank-9, .rank-10 { background: linear-gradient(135deg, #667eea, #764ba2); }
-.sales { font-weight: bold; color: #667eea; }
-.card-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
-.product-card { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; position: relative; overflow: hidden; transition: all 0.3s ease; }
-.product-card:hover { transform: translateY(-6px); box-shadow: 0 16px 40px rgba(0,0,0,0.4); border-color: rgba(0,212,255,0.3); }
-.product-card.rank-1 { border-color: rgba(255,215,0,0.4); box-shadow: 0 0 25px rgba(255,215,0,0.15); }.product-card.rank-2 { border-color: rgba(192,192,192,0.4); }.product-card.rank-3 { border-color: rgba(205,127,50,0.4); }
+.view-toggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+}
+.view-toggle button {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.view-toggle button:hover {
+  color: #fff;
+}
+.view-toggle button.active {
+  background: #d4a574;
+  color: #0a0a0f;
+  font-weight: 600;
+}
 
-.card-image-wrap { position: relative; overflow: hidden; }
-.card-image { width: 100%; height: 160px; object-fit: cover; transition: transform 0.3s ease; }
-.product-card:hover .card-image { transform: scale(1.05); }
+.refresh-btn {
+  padding: 8px 18px;
+  background: #d4a574;
+  color: #0a0a0f;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: opacity 0.2s;
+  font-family: inherit;
+}
+.refresh-btn:hover:not(:disabled) { opacity: 0.9; }
+.refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.card-content { padding: 14px; }
-.card-website { font-size: 0.7rem; color: #00d4ff; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-.card-product { font-size: 0.85rem; margin: 6px 0; color: #fff; line-height: 1.4; min-height: 36px; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card-brand { color: #a855f7; font-size: 0.75rem; font-weight: 500; margin-bottom: 8px; }
-.card-price { color: #00d4ff; font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
-.card-sales { color: rgba(255,255,255,0.4); font-size: 0.7rem; }
-.chart-view { padding: 20px; }
-.chart-container { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); }
-.chart-container h3 { margin-bottom: 15px; color: #fff; }
-.bar-chart { display: flex; flex-direction: column; gap: 10px; }
-.bar-item { display: flex; align-items: center; gap: 10px; }
-.bar-label { width: 100px; text-align: right; font-size: 0.9rem; color: rgba(255,255,255,0.7); }
-.bar-container { flex: 1; height: 24px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
-.bar { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; }
-.bar-value { color: white; font-size: 0.85rem; font-weight: bold; }
+/* 数据源 */
+.source-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.source-bar-title {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.source-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.source-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+.source-chip.enabled {
+  background: rgba(212, 165, 116, 0.15);
+  border-color: rgba(212, 165, 116, 0.3);
+  color: #d4a574;
+}
+.source-chip.disabled {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+}
+.source-chip:hover { transform: translateY(-1px); }
+.source-dot { font-size: 0.6rem; }
+
+/* 统计 */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 18px;
+  transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: rgba(212, 165, 116, 0.3); }
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #d4a574;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 4px;
+}
+.stat-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+/* Loading 遮罩 */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.loading-dialog {
+  background: #14141a;
+  padding: 40px;
+  border-radius: 14px;
+  text-align: center;
+  border: 1px solid rgba(212, 165, 116, 0.3);
+}
+.spinner-large {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(212, 165, 116, 0.15);
+  border-top-color: #d4a574;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin: 0 auto 18px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* 调试面板 */
-.debug-btn { padding: 8px 14px; background: #444; color: white; border: none; border-radius: 16px; cursor: pointer; font-size: 0.85rem; }
-.debug-btn:hover { background: #555; }
-.debug-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 600px; max-height: 80vh; background: #1a1a2e; border: 1px solid #00d4ff; border-radius: 12px; z-index: 9999; overflow: hidden; }
-.debug-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(0,212,255,0.1); border-bottom: 1px solid #333; }
-.debug-header h4 { margin: 0; color: #00d4ff; }
-.debug-close { background: none; border: none; color: #fff; font-size: 1.2rem; cursor: pointer; }
-.debug-content { padding: 12px; max-height: 60vh; overflow-y: auto; }
-.debug-item { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-.debug-item.success { border-left: 3px solid #00ff00; }
-.debug-item.error { border-left: 3px solid #ff4444; }
-.debug-title { display: flex; justify-content: space-between; margin-bottom: 6px; }
-.debug-name { font-weight: bold; color: #fff; }
-.debug-info { font-size: 0.85rem; color: #aaa; display: flex; gap: 15px; }
-.debug-error { color: #ff4444; font-size: 0.85rem; margin-top: 6px; }
-.debug-raw { background: #111; padding: 8px; border-radius: 4px; font-size: 0.75rem; color: #0f0; overflow-x: auto; margin-top: 8px; }
-.debug-full { color: #ff0; border: 1px solid #664400; }
-.debug-html { color: #f0f; border: 1px solid #440044; }
+.debug-fab { position: fixed; bottom: 20px; right: 20px; z-index: 100; }
+.debug-btn {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+.debug-btn:hover { background: rgba(255, 255, 255, 0.12); }
 
-/* 响应式布局 */
+.debug-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 560px;
+  max-height: 80vh;
+  background: #14141a;
+  border: 1px solid rgba(212, 165, 116, 0.3);
+  border-radius: 12px;
+  z-index: 9999;
+  overflow: hidden;
+}
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.debug-header h4 { margin: 0; color: #d4a574; font-size: 0.95rem; }
+.debug-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.debug-content { padding: 12px; max-height: 60vh; overflow-y: auto; }
+.debug-item {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.debug-item.success { border-left: 3px solid #4ade80; }
+.debug-item.error { border-left: 3px solid #f87171; }
+.debug-title { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.debug-name { font-weight: 600; color: #fff; font-size: 0.85rem; }
+.debug-status { color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; }
+.debug-info { font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); display: flex; gap: 15px; font-family: 'JetBrains Mono', monospace; }
+.debug-error { color: #f87171; font-size: 0.8rem; margin-top: 6px; }
+
+/* 主数据容器 */
+.data-container {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 8px 0;
+  min-height: 300px;
+}
+
+/* 骨架屏 */
+.skeleton-list {
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.skeleton-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  animation: skeleton-fade 1.4s ease-in-out infinite;
+}
+.skeleton-card:last-child { border-bottom: none; }
+@keyframes skeleton-fade {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton-image {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.skeleton-content { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skeleton-line {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+.skeleton-line.long { width: 60%; }
+.skeleton-line.medium { width: 40%; }
+.skeleton-line.short { width: 25%; }
+.skeleton-rank {
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* Empty */
+.empty-state {
+  padding: 80px 20px;
+  text-align: center;
+}
+.empty-icon {
+  width: 64px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 auto 20px;
+}
+.empty-text {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+}
+.empty-hint {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* 网格视图 */
+.rank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0;
+  padding: 0 8px;
+}
+.rank-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08); /* border-white/8 */
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  animation: fade-up 0.5s ease both;
+}
+.rank-card:hover { background-color: rgba(255, 255, 255, 0.05); }
+.rank-card:active { transform: scale(0.99); }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.rank-card-image-wrap {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rank-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+}
+.rank-card-image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(212, 165, 116, 0.15), rgba(212, 165, 116, 0.05));
+}
+
+.rank-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.rank-card-source {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.rank-card-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #fff;
+  margin: 0 0 4px 0;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rank-card-brand {
+  font-size: 0.8rem;
+  color: #d4a574;
+  margin-bottom: 6px;
+}
+.rank-card-meta {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-family: 'JetBrains Mono', monospace;
+}
+.rank-card-price {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  transition: color 0.3s;
+}
+.rank-card-sales {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.rank-card-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  min-width: 40px;
+  text-align: right;
+  flex-shrink: 0;
+  transition: color 0.3s;
+}
+.rank-card-badge.rank-gold {
+  color: #d4a574;
+}
+
+/* 列表视图 (水平滚动) */
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  animation: fade-up 0.5s ease both;
+}
+.rank-row:last-child { border-bottom: none; }
+.rank-row:hover { background-color: rgba(255, 255, 255, 0.05); }
+.rank-row:active { transform: scale(0.99); }
+
+.rank-row-image-wrap {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rank-row-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+}
+.rank-row-image-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(212, 165, 116, 0.15), rgba(212, 165, 116, 0.05));
+}
+
+.rank-row-body { flex: 1; min-width: 0; }
+.rank-row-source {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.rank-row-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #fff;
+  margin: 0 0 3px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rank-row-brand {
+  font-size: 0.78rem;
+  color: #d4a574;
+}
+
+.rank-row-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.rank-row-price {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  transition: color 0.3s;
+}
+.rank-row-sales {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.rank-row-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.3);
+  min-width: 48px;
+  text-align: right;
+  flex-shrink: 0;
+  transition: color 0.3s;
+}
+.rank-row-badge.rank-gold {
+  color: #d4a574;
+}
+
+/* 表格视图 */
+.rank-table-wrap { overflow-x: auto; }
+.rank-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.rank-table th {
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+.rank-table td {
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.rank-table-row {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  animation: fade-up 0.5s ease both;
+}
+.rank-table-row:hover { background-color: rgba(255, 255, 255, 0.05); }
+.rank-table-row:active { transform: scale(0.995); }
+
+.col-rank { width: 70px; }
+.col-source { width: 120px; }
+.col-brand { width: 120px; }
+.col-price, .col-sales { width: 130px; }
+
+.rank-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+}
+.rank-num.rank-gold { color: #d4a574; }
+
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* 响应式 */
 @media (max-width: 768px) {
-  .necklace-sales { padding: 12px; }
-  .page-title h1 { font-size: 1.6rem; }
-  .controls { padding: 12px; gap: 8px; justify-content: flex-start; overflow-x: auto; }
-  .control-group { flex-shrink: 0; }
+  .necklace-sales { padding: 20px 14px; }
+  .header-title { font-size: 1.6rem; }
+  .controls { padding: 12px; gap: 8px; }
   .control-group label { display: none; }
-  .control-group select, .control-group input { min-width: 100px; padding: 6px 10px; }
-  .search-group { flex: 1; min-width: 120px; }
-  .search-group input { width: 100%; }
-  .view-toggle button { padding: 6px 10px; font-size: 0.9rem; }
-  .refresh-btn { padding: 6px 10px; }
-  .stats-overview { grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .stat-card { padding: 10px; }
-  .stat-value { font-size: 1.2rem; }
-  .card-view { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stats-row { grid-template-columns: 1fr; }
+  .rank-grid { grid-template-columns: 1fr; }
+  .rank-card-badge, .rank-row-badge { font-size: 1.3rem; min-width: 32px; }
+  .col-brand { display: none; }
 }
 </style>

@@ -1,7 +1,12 @@
 <template>
   <div class="semantic-search">
     <div class="search-header">
-      <h2>🔍 语义搜索</h2>
+      <h2>
+        <svg class="inline-block w-6 h-6 mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+        语义搜索
+      </h2>
       <p class="search-desc">使用自然语言搜索产品，AI会理解您的需求</p>
     </div>
     
@@ -45,7 +50,10 @@
     </div>
     
     <div v-if="error" class="search-error">
-      ❌ {{ error }}
+      <svg class="inline-block w-4 h-4 mr-2 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      {{ error }}
     </div>
     
     <div v-if="results.length > 0" class="search-results">
@@ -58,7 +66,11 @@
         <div v-for="product in results" :key="product.id" class="product-card">
           <div class="product-image">
             <img v-if="product.image_url" :src="product.image_url" :alt="product.product_name" />
-            <div v-else class="no-image">📷</div>
+            <div v-else class="no-image">
+              <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+            </div>
           </div>
           
           <div class="product-info">
@@ -68,7 +80,13 @@
               {{ product.currency }} {{ product.price?.toLocaleString() }}
             </p>
             <p class="product-category">{{ product.category }}</p>
-            <p class="product-platform">📍 {{ product.platform }}</p>
+            <p class="product-platform">
+            <svg class="inline-block w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+            {{ product.platform }}
+          </p>
             
             <div class="product-similarity">
               <span class="similarity-label">相似度:</span>

@@ -1,192 +1,351 @@
 <template>
-  <div class="cad-analysis">
-    <!-- 页面标题 -->
-    <div class="page-title">
-      <h1>🔬 CAD 图纸 AI 分析</h1>
-      <p class="subtitle">上传 CAD 图纸，AI 自动识别风险并给出优化建议</p>
-    </div>
+  <div class="min-h-screen bg-[#0a0a0a] text-white">
+    <div class="max-w-7xl mx-auto px-6 py-10">
 
-    <!-- 图片上传区域 -->
-    <div class="upload-section">
+      <!-- 标题区 -->
+      <div class="mb-10">
+        <h1 class="text-4xl font-bold tracking-tight text-white">CAD 图纸 AI 分析</h1>
+        <p class="text-base text-gray-400 mt-2">上传 CAD 图纸，AI 自动识别风险并给出优化建议</p>
+      </div>
+
+      <!-- 上传区域 -->
       <div
-        class="upload-zone"
-        :class="{ 'drag-over': isDragOver, 'has-image': previewUrl }"
-        @dragover.prevent="onDragOver"
-        @dragleave.prevent="onDragLeave"
-        @drop.prevent="onDrop"
-        @click="!previewUrl && triggerFileInput()"
+        v-if="!previewUrl && !analysisResult"
+        class="relative mb-10 transition-all duration-300"
       >
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".jpg,.jpeg,.png,.webp"
-          @change="onFileSelect"
-          style="display: none"
-        />
-
-        <template v-if="!previewUrl">
-          <div class="upload-icon">📁</div>
-          <p class="upload-text">拖拽图片到这里，或 <span class="upload-link">点击选择文件</span></p>
-          <p class="upload-hint">支持 JPG / PNG / WebP，最大 10MB</p>
-        </template>
-
-        <template v-else>
-          <img :src="previewUrl" alt="预览" class="preview-image" />
-          <div class="preview-overlay">
-            <button class="btn btn-sm btn-replace" @click.stop="replaceImage">🔄 替换图片</button>
-            <button class="btn btn-sm btn-analyze" @click.stop="startAnalysis" :disabled="analyzing">
-              {{ analyzing ? '分析中...' : '🚀 开始分析' }}
-            </button>
-          </div>
-        </template>
-      </div>
-
-      <div v-if="uploadError" class="error-message">
-        ❌ {{ uploadError }}
-      </div>
-    </div>
-
-    <!-- 分析中状态 -->
-    <div v-if="analyzing" class="analyzing-section">
-      <div class="analyzing-card">
-        <div class="analyzing-spinner"></div>
-        <p class="analyzing-text">AI 正在分析图纸，请稍候...</p>
-        <div class="analyzing-steps">
-          <div :class="['step', analysisStep >= 1 ? 'done' : '']">
-            <span class="step-icon">{{ analysisStep > 1 ? '✅' : analysisStep === 1 ? '⏳' : '⬜' }}</span>
-            <span>图像识别</span>
-          </div>
-          <div :class="['step', analysisStep >= 2 ? 'done' : '']">
-            <span class="step-icon">{{ analysisStep > 2 ? '✅' : analysisStep === 2 ? '⏳' : '⬜' }}</span>
-            <span>风险评估</span>
-          </div>
-          <div :class="['step', analysisStep >= 3 ? 'done' : '']">
-            <span class="step-icon">{{ analysisStep > 3 ? '✅' : analysisStep === 3 ? '⏳' : '⬜' }}</span>
-            <span>生成报告</span>
+        <div
+          class="upload-zone border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300"
+          :class="[
+            isDragOver
+              ? 'border-[#d4a574] bg-[#d4a574]/5'
+              : 'border-white/20 hover:border-[#d4a574]/60'
+          ]"
+          @dragover.prevent="onDragOver"
+          @dragleave.prevent="onDragLeave"
+          @drop.prevent="onDrop"
+          @click="triggerFileInput()"
+        >
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            @change="onFileSelect"
+            class="hidden"
+          />
+          <div class="py-20 px-8 flex flex-col items-center">
+            <svg class="w-16 h-16 text-gray-500 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p class="text-lg text-gray-300 mb-2">拖拽图片到这里，或 <span class="text-[#d4a574] underline underline-offset-2">点击选择文件</span></p>
+            <p class="text-sm text-gray-500">支持 JPG / PNG / WebP，最大 10MB</p>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- 分析结果 -->
-    <div v-if="analysisResult && !analyzing" class="results-section">
-      <!-- 标注图片 -->
-      <div class="annotated-image-section">
-        <h2>📐 标注图纸</h2>
-        <div class="image-container">
-          <img :src="annotatedImageUrl" alt="AI 标注结果" class="annotated-image" />
+        <!-- 上传错误 -->
+        <div
+          v-if="uploadError"
+          class="mt-4 px-4 py-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-400 text-sm"
+        >
+          {{ uploadError }}
         </div>
       </div>
 
-      <!-- Markdown 分析结果 -->
-      <div class="analysis-content">
-        <h2>📋 分析报告</h2>
-        <div class="markdown-body" v-html="renderedMarkdown"></div>
-      </div>
-
-      <!-- 学习反馈区 -->
-      <div class="feedback-section">
-        <h2>🎓 学习反馈</h2>
-        <p class="feedback-hint">AI 分析可能存在偏差，请帮助改进模型</p>
-
-        <div v-if="riskItems.length === 0" class="feedback-empty">
-          <p>未识别到可反馈的风险项</p>
-        </div>
-
-        <div v-for="(risk, index) in riskItems" :key="index" class="feedback-card">
-          <div class="feedback-header">
-            <span class="risk-level" :class="risk.level">{{ risk.levelText }}</span>
-            <span class="risk-title">{{ risk.title }}</span>
-          </div>
-          <p class="risk-desc">{{ risk.description }}</p>
-          <div class="feedback-actions">
+      <!-- 上传后预览 -->
+      <div
+        v-if="previewUrl && !analysisResult && !analyzing"
+        class="mb-10 animate-fade-in"
+      >
+        <div class="relative rounded-2xl overflow-hidden border border-white/10">
+          <img :src="previewUrl" alt="预览" class="w-full max-h-[480px] object-contain bg-black/40" />
+          <div class="absolute bottom-0 left-0 right-0 bg-black/70 p-5 flex gap-3 justify-center">
             <button
-              v-if="!risk.submitted"
-              class="btn btn-agree"
-              :class="{ submitting: risk.submitting }"
-              :disabled="risk.submitting"
-              @click="setFeedback(index, 'agree')"
+              class="px-5 py-2.5 rounded-lg bg-white/10 border border-white/15 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+              @click="replaceImage"
             >
-              <span v-if="risk.submitting">⏳</span>
-              <span v-else>✅ 同意分析</span>
+              替换图片
             </button>
             <button
-              v-if="!risk.submitted && risk.feedback !== 'correct'"
-              class="btn btn-correct"
-              @click="setFeedback(index, 'correct')"
+              class="px-5 py-2.5 rounded-lg bg-[#d4a574] text-black text-sm font-semibold hover:bg-[#c4955f] transition-colors"
+              @click="startAnalysis"
             >
-              ✏️ 需要修正
+              开始分析
             </button>
-            <template v-if="risk.feedback === 'correct' && !risk.submitted">
-              <div class="correction-input">
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading 上传中 -->
+      <div v-if="uploading" class="mb-10 animate-fade-in">
+        <div class="rounded-xl border border-white/10 bg-white/[0.03] p-8">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-sm text-gray-300">正在上传图片...</span>
+            <span class="text-sm font-mono text-[#d4a574]">{{ uploadProgress }}%</span>
+          </div>
+          <div class="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-[#d4a574] rounded-full transition-all duration-300"
+              :style="{ width: uploadProgress + '%' }"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分析中 -->
+      <div v-if="analyzing && !analysisResult" class="mb-10 animate-fade-in">
+        <div class="rounded-xl border border-white/10 bg-white/[0.03] p-10">
+          <!-- 骨架屏预览 -->
+          <div class="grid grid-cols-[3fr_2fr] gap-8 mb-10">
+            <div class="space-y-4">
+              <div class="h-6 w-40 bg-white/10 rounded animate-pulse"></div>
+              <div class="aspect-[4/3] bg-white/[0.05] rounded-xl animate-pulse"></div>
+            </div>
+            <div class="space-y-4">
+              <div class="h-6 w-32 bg-white/10 rounded animate-pulse"></div>
+              <div class="space-y-3">
+                <div class="h-4 bg-white/[0.07] rounded animate-pulse"></div>
+                <div class="h-4 bg-white/[0.07] rounded w-5/6 animate-pulse"></div>
+                <div class="h-4 bg-white/[0.07] rounded w-4/6 animate-pulse"></div>
+                <div class="h-4 bg-white/[0.07] rounded w-3/4 animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 步骤指示器 -->
+          <div class="flex items-center justify-center gap-0">
+            <template v-for="(step, i) in analysisSteps" :key="i">
+              <div class="flex flex-col items-center gap-2 min-w-[100px]">
+                <div
+                  class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-500"
+                  :class="[
+                    analysisStep > i + 1
+                      ? 'bg-[#d4a574] text-black'
+                      : analysisStep === i + 1
+                        ? 'bg-[#d4a574]/20 border-2 border-[#d4a574] text-[#d4a574] animate-pulse'
+                        : 'bg-white/5 border border-white/10 text-gray-500'
+                  ]"
+                >
+                  <svg v-if="analysisStep > i + 1" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span v-else>{{ i + 1 }}</span>
+                </div>
+                <span
+                  class="text-xs transition-colors duration-300"
+                  :class="analysisStep >= i + 1 ? 'text-white' : 'text-gray-500'"
+                >{{ step }}</span>
+              </div>
+              <div
+                v-if="i < analysisSteps.length - 1"
+                class="h-px w-16 mb-6 transition-colors duration-500"
+                :class="analysisStep > i + 1 ? 'bg-[#d4a574]/40' : 'bg-white/10'"
+              ></div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分析结果 -->
+      <div
+        v-if="analysisResult && !analyzing"
+        class="mb-10 animate-slide-in"
+      >
+        <!-- 操作栏 -->
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-white">分析结果</h2>
+          <button
+            class="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-gray-300 text-sm hover:bg-white/10 transition-colors"
+            @click="resetAll"
+          >
+            分析新图纸
+          </button>
+        </div>
+
+        <!-- 主结果网格 -->
+        <div class="grid grid-cols-[3fr_2fr] gap-8 mb-10">
+          <!-- 左侧：标注图片 -->
+          <div>
+            <h3 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">标注图纸</h3>
+            <div class="rounded-xl border border-white/10 overflow-hidden bg-black/30">
+              <img
+                v-if="annotatedImageUrl"
+                :src="annotatedImageUrl"
+                alt="AI 标注结果"
+                class="w-full max-h-[600px] object-contain"
+              />
+              <div v-else class="py-20 flex items-center justify-center text-gray-500 text-sm">
+                无标注图片
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧：Markdown 报告 -->
+          <div>
+            <h3 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">分析报告</h3>
+            <div
+              class="rounded-xl border border-white/10 bg-white/[0.03] p-6 max-h-[600px] overflow-y-auto markdown-body"
+              v-html="renderedMarkdown"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 风险反馈区 -->
+        <div v-if="riskItems.length > 0" class="mb-10">
+          <h3 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">风险项反馈</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              v-for="(risk, index) in riskItems"
+              :key="index"
+              class="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden transition-colors hover:border-white/20"
+            >
+              <!-- 顶部：风险等级徽章 -->
+              <div class="px-5 pt-4 pb-2 flex items-center gap-2">
+                <span
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold"
+                  :class="{
+                    'bg-red-500/15 text-red-400 border border-red-500/20': risk.level === 'high',
+                    'bg-amber-500/15 text-amber-400 border border-amber-500/20': risk.level === 'medium',
+                    'bg-sky-500/15 text-sky-400 border border-sky-500/20': risk.level === 'low'
+                  }"
+                >
+                  {{ risk.levelText }}
+                </span>
+                <span class="text-sm font-medium text-white truncate">{{ risk.title }}</span>
+              </div>
+
+              <!-- 中间：风险描述 -->
+              <div class="px-5 pb-3">
+                <p class="text-sm text-gray-400 leading-relaxed line-clamp-3">{{ risk.description }}</p>
+              </div>
+
+              <!-- 底部：操作按钮 -->
+              <div class="px-5 pb-4 flex items-center gap-2 flex-wrap">
+                <template v-if="!risk.submitted">
+                  <button
+                    class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    :class="risk.feedback === 'agree'
+                      ? 'bg-[#d4a574]/20 text-[#d4a574] border border-[#d4a574]/30'
+                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'"
+                    :disabled="risk.submitting"
+                    @click="setFeedback(index, 'agree')"
+                  >
+                    {{ risk.submitting && risk.feedback === 'agree' ? '提交中...' : '同意分析' }}
+                  </button>
+                  <button
+                    class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    :class="risk.feedback === 'correct'
+                      ? 'bg-white/10 text-white border border-white/20'
+                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'"
+                    @click="setFeedback(index, 'correct')"
+                  >
+                    需要修正
+                  </button>
+                </template>
+                <template v-else>
+                  <span class="inline-flex items-center gap-1.5 text-xs text-green-400">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    已处理
+                  </span>
+                </template>
+              </div>
+
+              <!-- 修正输入区 -->
+              <div
+                v-if="risk.feedback === 'correct' && !risk.submitted"
+                class="border-t border-white/5 px-5 py-4 animate-fade-in"
+              >
                 <textarea
                   v-model="risk.correction"
                   placeholder="请输入正确的分析结果..."
-                  rows="2"
+                  rows="3"
+                  class="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 resize-y focus:outline-none focus:border-[#d4a574]/50 transition-colors"
                 ></textarea>
                 <button
-                  class="btn btn-sm"
+                  class="mt-3 px-4 py-2 rounded-lg bg-[#d4a574] text-black text-xs font-semibold hover:bg-[#c4955f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   :disabled="!risk.correction.trim() || risk.submitting"
                   @click="submitCorrection(index)"
                 >
                   {{ risk.submitting ? '提交中...' : '提交修正' }}
                 </button>
               </div>
-            </template>
+            </div>
+          </div>
+
+          <!-- 批量提交反馈 -->
+          <div class="mt-6 flex items-center gap-4">
             <button
-              v-if="risk.submitted"
-              class="btn btn-agree submitted"
-              disabled
+              class="px-6 py-2.5 rounded-lg bg-[#d4a574] text-black text-sm font-semibold hover:bg-[#c4955f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              :disabled="!hasFeedback || submittingFeedback"
+              @click="submitFeedback"
             >
-              ✅ 已处理
+              {{ submittingFeedback ? '提交中...' : '提交反馈' }}
             </button>
+            <span
+              v-if="feedbackMessage"
+              class="text-sm"
+              :class="feedbackSuccess ? 'text-green-400' : 'text-red-400'"
+            >
+              {{ feedbackMessage }}
+            </span>
           </div>
         </div>
+      </div>
 
-        <button
-          class="btn btn-submit-feedback"
-          :disabled="!hasFeedback"
-          @click="submitFeedback"
-        >
-          {{ submittingFeedback ? '提交中...' : '📤 提交反馈' }}
-        </button>
-        <div v-if="feedbackMessage" class="feedback-result" :class="feedbackSuccess ? 'success' : 'error'">
-          {{ feedbackMessage }}
+      <!-- 历史记录 -->
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-medium text-gray-400 uppercase tracking-wider">历史分析</h3>
+          <button
+            class="p-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+            :disabled="loadingHistory"
+            @click="loadHistory"
+          >
+            <svg class="w-4 h-4" :class="{ 'animate-spin': loadingHistory }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="loadingHistory && history.length === 0" class="text-sm text-gray-500 py-6 text-center">
+          加载中...
+        </div>
+
+        <div v-else-if="history.length === 0" class="text-sm text-gray-500 py-6 text-center border border-dashed border-white/10 rounded-xl">
+          暂无历史记录
+        </div>
+
+        <div v-else class="history-scroll flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+          <div
+            v-for="item in history"
+            :key="item.id || item.image_hash"
+            class="group flex-shrink-0 cursor-pointer transition-transform duration-200 hover:scale-105"
+            @click="viewHistoryItem(item)"
+          >
+            <div class="w-24 h-24 rounded-lg overflow-hidden border border-white/10 bg-black/30 group-hover:border-[#d4a574]/40 transition-colors">
+              <img
+                v-if="item.thumbnail"
+                :src="item.thumbnail"
+                alt="缩略图"
+                class="w-full h-full object-cover"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center text-gray-600">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+            <div class="mt-2 w-24">
+              <p class="text-xs text-gray-400 truncate">{{ formatTime(item.created_at || item.timestamp) }}</p>
+              <p class="text-[10px] text-gray-600 font-mono truncate">{{ item.image_hash || 'N/A' }}</p>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 历史记录 -->
-    <div class="history-section">
-      <div class="history-header">
-        <h2>📜 历史分析</h2>
-        <button class="btn btn-sm btn-refresh" @click="loadHistory" :disabled="loadingHistory">
-          {{ loadingHistory ? '...' : '🔄' }}
-        </button>
-      </div>
-
-      <div v-if="loadingHistory" class="loading-small">
-        <div class="spinner-small"></div>
-        <span>加载历史记录...</span>
-      </div>
-
-      <div v-else-if="history.length === 0" class="history-empty">
-        <p>暂无历史记录</p>
-      </div>
-
-      <div v-else class="history-list">
-        <div v-for="item in history" :key="item.id || item.image_hash" class="history-item">
-          <div class="history-thumb">
-            <img v-if="item.thumbnail" :src="item.thumbnail" alt="缩略图" />
-            <span v-else class="history-thumb-placeholder">📄</span>
-          </div>
-          <div class="history-info">
-            <div class="history-time">{{ formatTime(item.created_at || item.timestamp) }}</div>
-            <div class="hash">{{ item.image_hash || 'N/A' }}</div>
-          </div>
-          <button class="btn btn-sm btn-view" @click="viewHistoryItem(item)">查看</button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -204,10 +363,14 @@ export default {
     const selectedBase64 = ref(null)
     const uploadError = ref('')
 
+    const uploading = ref(false)
+    const uploadProgress = ref(0)
     const analyzing = ref(false)
     const analysisStep = ref(0)
     const analysisResult = ref(null)
     const annotatedImageUrl = ref(null)
+
+    const analysisSteps = ['图像识别', '风险评估', '生成报告']
 
     const history = ref([])
     const loadingHistory = ref(false)
@@ -216,18 +379,15 @@ export default {
     const feedbackSuccess = ref(false)
     const submittingFeedback = ref(false)
 
-    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-    // 解析风险项
     const riskItems = ref([])
 
-    // 渲染 Markdown 为 HTML
     const renderedMarkdown = computed(() => {
       if (!analysisResult.value?.analysis_text) return ''
       let text = analysisResult.value.analysis_text
 
-      // 简单的 Markdown 渲染
       text = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
       text = text.replace(/`([^`]+)`/g, '<code>$1</code>')
       text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -241,7 +401,6 @@ export default {
       text = text.replace(/\n/g, '<br/>')
       text = '<p>' + text + '</p>'
 
-      // 清理空标签
       text = text.replace(/<p>\s*<\/p>/g, '')
       text = text.replace(/<p>\s*(<h[123]>)/g, '$1')
       text = text.replace(/(<\/h[123]>)\s*<\/p>/g, '$1')
@@ -324,9 +483,30 @@ export default {
       triggerFileInput()
     }
 
+    const resetAll = () => {
+      previewUrl.value = null
+      selectedFile.value = null
+      selectedBase64.value = null
+      analysisResult.value = null
+      annotatedImageUrl.value = null
+      riskItems.value = []
+      uploadError.value = ''
+      feedbackMessage.value = ''
+    }
+
     // 分析
     const startAnalysis = async () => {
       if (!selectedBase64.value) return
+
+      // 模拟上传进度
+      uploading.value = true
+      uploadProgress.value = 0
+      const progressInterval = setInterval(() => {
+        if (uploadProgress.value < 90) {
+          uploadProgress.value += Math.random() * 15 + 5
+          if (uploadProgress.value > 90) uploadProgress.value = 90
+        }
+      }, 200)
 
       analyzing.value = true
       analysisStep.value = 1
@@ -335,12 +515,11 @@ export default {
       riskItems.value = []
 
       try {
-        // 模拟步骤动画
-        await new Promise(r => setTimeout(r, 600))
+        // 步骤动画
+        await new Promise(r => setTimeout(r, 800))
         analysisStep.value = 2
-        await new Promise(r => setTimeout(r, 600))
+        await new Promise(r => setTimeout(r, 800))
         analysisStep.value = 3
-        await new Promise(r => setTimeout(r, 400))
 
         const response = await fetch('/api/cad/analyze', {
           method: 'POST',
@@ -352,26 +531,30 @@ export default {
           throw new Error(`分析失败: HTTP ${response.status}`)
         }
 
+        clearInterval(progressInterval)
+        uploadProgress.value = 100
+        await new Promise(r => setTimeout(r, 300))
+        uploading.value = false
+
         const data = await response.json()
         analysisResult.value = data
 
-        // 标注图片
         if (data.annotated_image_base64) {
           annotatedImageUrl.value = data.annotated_image_base64.startsWith('data:')
             ? data.annotated_image_base64
             : `data:image/png;base64,${data.annotated_image_base64}`
         }
 
-        // 解析风险项
         parseRiskItems(data.analysis_text || '')
-
         analysisStep.value = 4
       } catch (error) {
         console.error('分析失败:', error)
-        // 静默失败，不显示错误提示
-        // uploadError.value = error.message || '分析失败，请重试'
-      } finally {
+        clearInterval(progressInterval)
+        uploading.value = false
         analyzing.value = false
+        uploadError.value = error.message || '分析失败，请重试'
+      } finally {
+        analyzing.value = analysisResult.value === null
       }
     }
 
@@ -384,7 +567,6 @@ export default {
       for (const line of lines) {
         const trimmed = line.trim()
 
-        // 匹配风险项: - 风险标题 或 * 风险标题 或 ⚠️ 风险标题 或 ### 风险标题
         const riskMatch = trimmed.match(/^[-*•]\s*(?:⚠️|🔴|🟡|🟢)?\s*\[?(高风险|中风险|低风险|严重|警告|建议|info|warning|critical|high|medium|low)\]?\s*[:：]?\s*(.+)/i)
           || trimmed.match(/^###\s*(?:⚠️|🔴|🟡|🟢)?\s*\[?(高风险|中风险|低风险|严重|警告|建议)\]?\s*[:：]?\s*(.+)/i)
 
@@ -396,7 +578,9 @@ export default {
             title: riskMatch[2].trim(),
             description: '',
             feedback: null,
-            correction: ''
+            correction: '',
+            submitting: false,
+            submitted: false
           }
           inRiskSection = true
         } else if (inRiskSection && currentRisk && trimmed && !trimmed.match(/^#{1,3}\s/) && !trimmed.match(/^[-*]\s/)) {
@@ -408,7 +592,6 @@ export default {
 
       if (currentRisk) risks.push(currentRisk)
 
-      // 如果没解析到具体风险，从列表项中提取
       if (risks.length === 0) {
         for (const line of lines) {
           const trimmed = line.trim()
@@ -420,7 +603,9 @@ export default {
               title: listMatch[1].substring(0, 50),
               description: listMatch[1],
               feedback: null,
-              correction: ''
+              correction: '',
+              submitting: false,
+              submitted: false
             })
           }
         }
@@ -442,8 +627,7 @@ export default {
       if (type !== 'correct') {
         riskItems.value[index].correction = ''
       }
-      
-      // 如果是"同意"，立即提交到后端学习
+
       if (type === 'agree') {
         riskItems.value[index].submitting = true
         try {
@@ -463,7 +647,6 @@ export default {
           })
           if (resp.ok) {
             riskItems.value[index].submitted = true
-            console.log(`风险项 "${riskItem.title}" 已标记为同意并记录`)
           }
         } catch (e) {
           console.error('提交反馈失败:', e)
@@ -476,7 +659,7 @@ export default {
     const submitCorrection = async (index) => {
       const riskItem = riskItems.value[index]
       if (!riskItem.correction || !riskItem.correction.trim()) return
-      
+
       riskItems.value[index].submitting = true
       riskItems.value[index].feedback = 'correct'
       try {
@@ -495,7 +678,6 @@ export default {
         })
         if (resp.ok) {
           riskItems.value[index].submitted = true
-          console.log(`修正 "${riskItem.title}" 已提交`)
         }
       } catch (e) {
         console.error('提交修正失败:', e)
@@ -539,7 +721,6 @@ export default {
         feedbackMessage.value = result.message || '反馈提交成功，感谢你的帮助！'
         feedbackSuccess.value = true
 
-        // 重置反馈状态
         riskItems.value.forEach(r => {
           r.feedback = null
           r.correction = ''
@@ -581,7 +762,6 @@ export default {
     }
 
     const viewHistoryItem = (item) => {
-      // 如果有标注图片，显示
       if (item.annotated_image_base64) {
         annotatedImageUrl.value = item.annotated_image_base64.startsWith('data:')
           ? item.annotated_image_base64
@@ -612,13 +792,14 @@ export default {
 
     return {
       fileInput, isDragOver, previewUrl, selectedFile, uploadError,
-      analyzing, analysisStep, analysisResult, annotatedImageUrl,
+      uploading, uploadProgress,
+      analyzing, analysisStep, analysisSteps, analysisResult, annotatedImageUrl,
       renderedMarkdown,
       riskItems, hasFeedback,
       feedbackMessage, feedbackSuccess, submittingFeedback,
       history, loadingHistory,
       triggerFileInput, onDragOver, onDragLeave, onDrop,
-      onFileSelect, replaceImage, startAnalysis,
+      onFileSelect, replaceImage, resetAll, startAnalysis,
       setFeedback, submitCorrection, submitFeedback,
       loadHistory, viewHistoryItem, formatTime
     }
@@ -627,614 +808,123 @@ export default {
 </script>
 
 <style scoped>
-.cad-analysis {
-  font-family: sans-serif;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-  min-height: calc(100vh - 80px);
-  color: #fff;
-}
-
-/* 页面标题 */
-.page-title {
-  text-align: center;
-  margin-bottom: 24px;
-}
-.page-title h1 {
-  font-size: 2.2rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.page-title .subtitle {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 1rem;
-}
-
-/* 上传区域 */
-.upload-section {
-  margin-bottom: 24px;
-}
-.upload-zone {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 2px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  padding: 40px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-.upload-zone:hover {
-  border-color: rgba(0, 212, 255, 0.5);
-  background: rgba(0, 212, 255, 0.05);
-}
-.upload-zone.drag-over {
-  border-color: #00d4ff;
-  background: rgba(0, 212, 255, 0.1);
-  transform: scale(1.01);
-}
-.upload-zone.has-image {
-  padding: 0;
-  cursor: default;
-  border-style: solid;
-  border-color: rgba(0, 212, 255, 0.3);
-}
-.upload-icon {
-  font-size: 3rem;
-  margin-bottom: 16px;
-}
-.upload-text {
-  font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 8px;
-}
-.upload-link {
-  color: #00d4ff;
-  text-decoration: underline;
-  cursor: pointer;
-}
-.upload-hint {
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 0.85rem;
-  margin: 0;
-}
-.preview-image {
-  width: 100%;
-  max-height: 400px;
-  object-fit: contain;
-  display: block;
-}
-.preview-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 16px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-.error-message {
-  margin-top: 12px;
-  padding: 10px 16px;
-  background: rgba(255, 68, 68, 0.15);
-  border: 1px solid rgba(255, 68, 68, 0.3);
-  border-radius: 12px;
-  color: #ff6b6b;
-  font-size: 0.9rem;
-}
-
-/* 按钮 */
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 16px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.9rem;
-  transition: all 0.3s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.btn:hover {
-  transform: translateY(-2px);
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  border-radius: 12px;
-}
-.btn-replace {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-.btn-analyze {
-  background: linear-gradient(135deg, #00d4ff, #667eea);
-  color: white;
-  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
-}
-.btn-analyze:hover {
-  box-shadow: 0 8px 25px rgba(0, 212, 255, 0.5);
-}
-.btn-refresh {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-/* 分析中 */
-.analyzing-section {
-  margin-bottom: 24px;
-}
-.analyzing-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 40px;
-  text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-.analyzing-spinner {
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(0, 212, 255, 0.2);
-  border-top: 4px solid #00d4ff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 20px;
-}
-.analyzing-text {
-  font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 24px;
-}
-.analyzing-steps {
-  display: flex;
-  justify-content: center;
-  gap: 32px;
-}
-.step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-}
-.step.done {
-  color: rgba(255, 255, 255, 0.9);
-}
-.step-icon {
-  font-size: 1.4rem;
-}
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* 结果区域 */
-.results-section {
-  margin-bottom: 24px;
-}
-.annotated-image-section {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-.annotated-image-section h2 {
-  margin: 0 0 16px;
-  font-size: 1.3rem;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.image-container {
-  display: flex;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-}
-.annotated-image {
-  max-width: 100%;
-  max-height: 600px;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-/* Markdown 内容 */
-.analysis-content {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-.analysis-content h2 {
-  margin: 0 0 16px;
-  font-size: 1.3rem;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.markdown-body {
-  color: rgba(255, 255, 255, 0.85);
-  line-height: 1.7;
-  font-size: 0.95rem;
-}
+/* Markdown 渲染样式 */
 .markdown-body :deep(h1) {
-  font-size: 1.5rem;
-  margin: 16px 0 8px;
+  font-size: 1.4rem;
+  font-weight: 700;
   color: #fff;
+  margin: 1rem 0 0.5rem;
 }
 .markdown-body :deep(h2) {
-  font-size: 1.3rem;
-  margin: 16px 0 8px;
+  font-size: 1.2rem;
+  font-weight: 600;
   color: #fff;
+  margin: 0.875rem 0 0.5rem;
 }
 .markdown-body :deep(h3) {
-  font-size: 1.1rem;
-  margin: 12px 0 6px;
+  font-size: 1.05rem;
+  font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
+  margin: 0.75rem 0 0.375rem;
+}
+.markdown-body :deep(p) {
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.7;
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
 }
 .markdown-body :deep(strong) {
-  color: #00d4ff;
+  color: #d4a574;
   font-weight: 600;
 }
 .markdown-body :deep(em) {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.6);
 }
 .markdown-body :deep(code) {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.08);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.85em;
-  color: #a855f7;
+  color: #d4a574;
 }
 .markdown-body :deep(pre) {
   background: rgba(0, 0, 0, 0.4);
   padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
-  margin: 12px 0;
+  margin: 0.75rem 0;
 }
 .markdown-body :deep(pre code) {
   background: none;
   padding: 0;
-  color: #0f0;
+  color: rgba(255, 255, 255, 0.8);
 }
 .markdown-body :deep(ul) {
-  padding-left: 20px;
-  margin: 8px 0;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
 }
 .markdown-body :deep(li) {
-  margin: 4px 0;
-}
-
-/* 学习反馈 */
-.feedback-section {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-.feedback-section h2 {
-  margin: 0 0 8px;
-  font-size: 1.3rem;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.feedback-hint {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 0.9rem;
-  margin: 0 0 20px;
-}
-.feedback-empty {
-  text-align: center;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 20px;
-}
-.feedback-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 12px;
-  transition: all 0.3s ease;
-}
-.feedback-card:hover {
-  border-color: rgba(0, 212, 255, 0.2);
-}
-.feedback-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.risk-level {
-  padding: 3px 10px;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.risk-level.high {
-  background: rgba(255, 68, 68, 0.2);
-  color: #ff6b6b;
-  border: 1px solid rgba(255, 68, 68, 0.3);
-}
-.risk-level.medium {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-}
-.risk-level.low {
-  background: rgba(0, 212, 255, 0.2);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.3);
-}
-.risk-title {
-  font-weight: 600;
-  color: #fff;
-  font-size: 0.95rem;
-}
-.risk-desc {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.85rem;
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
-.feedback-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: flex-start;
-}
-.btn-agree {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.3);
-}
-.btn-agree:hover, .btn-agree.selected {
-  background: rgba(0, 212, 255, 0.3);
-}
-.btn-agree.submitted {
-  background: rgba(34, 197, 94, 0.3);
-  color: #22c55e;
-  border-color: rgba(34, 197, 94, 0.5);
-}
-.btn-agree:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.btn-correct {
-  background: rgba(168, 85, 247, 0.15);
-  color: #a855f7;
-  border: 1px solid rgba(168, 85, 247, 0.3);
-}
-.btn-correct:hover, .btn-correct.selected {
-  background: rgba(168, 85, 247, 0.3);
-}
-.correction-input {
-  width: 100%;
-  margin-top: 8px;
-}
-.correction-input textarea {
-  width: 100%;
-  padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.85rem;
-  resize: vertical;
-  font-family: inherit;
-}
-.correction-input textarea:focus {
-  outline: none;
-  border-color: #a855f7;
-}
-.correction-input textarea::placeholder {
-  color: rgba(255, 255, 255, 0.3);
-}
-.btn-submit-feedback {
-  background: linear-gradient(135deg, #a855f7, #667eea);
-  color: white;
-  width: 100%;
-  justify-content: center;
-  margin-top: 12px;
-  box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
-}
-.btn-submit-feedback:hover {
-  box-shadow: 0 8px 25px rgba(168, 85, 247, 0.5);
-}
-.feedback-result {
-  margin-top: 12px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  font-size: 0.9rem;
-  text-align: center;
-}
-.feedback-result.success {
-  background: rgba(0, 255, 100, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(0, 255, 100, 0.3);
-}
-.feedback-result.error {
-  background: rgba(255, 68, 68, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(255, 68, 68, 0.3);
+  margin: 0.25rem 0;
+  line-height: 1.6;
 }
 
-/* 历史记录 */
-.history-section {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px;
+/* 历史记录横向滚动 */
+.history-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+.history-scroll::-webkit-scrollbar {
+  height: 6px;
 }
-.history-header h2 {
-  margin: 0;
-  font-size: 1.3rem;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.history-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
-.loading-small {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 20px;
-  color: rgba(255, 255, 255, 0.5);
+.history-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
-.spinner-small {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(0, 212, 255, 0.2);
-  border-top: 2px solid #00d4ff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-.history-empty {
-  text-align: center;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 20px;
-}
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  transition: all 0.2s ease;
-}
-.history-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.history-thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.history-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.history-thumb-placeholder {
-  font-size: 1.5rem;
-}
-.history-info {
-  flex: 1;
-  min-width: 0;
-}
-.history-time {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-.hash {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.btn-view {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  flex-shrink: 0;
-}
-.btn-view:hover {
-  background: rgba(0, 212, 255, 0.3);
+.history-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* 响应式布局 */
-@media (max-width: 768px) {
-  .cad-analysis {
-    padding: 12px;
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-  .page-title h1 {
-    font-size: 1.6rem;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-  .upload-zone {
-    padding: 24px;
-    min-height: 150px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
   }
-  .upload-icon {
-    font-size: 2rem;
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
-  .upload-text {
-    font-size: 0.95rem;
-  }
-  .analyzing-steps {
-    gap: 16px;
-  }
-  .step {
-    font-size: 0.75rem;
-  }
-  .feedback-actions {
-    flex-direction: column;
-  }
-  .btn-agree, .btn-correct {
-    width: 100%;
-    justify-content: center;
-  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.5s ease-out forwards;
+}
+
+/* line-clamp */
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

@@ -1,94 +1,111 @@
 <template>
-  <div class="jewelry-agent-container">
-    <!-- 悬浮按钮 -->
-    <div v-if="!showAgent" class="agent-fab" @click="toggleAgent">
-      <span class="fab-icon">💎</span>
-      <span class="fab-text">珠宝顾问</span>
-    </div>
+  <div class="jewelry-agent">
+    <!-- 浮动按钮 -->
+    <button
+      v-if="!isOpen"
+      class="fab-button"
+      @click="toggleAgent"
+      :style="{ '--delay': '0s' }"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+      </svg>
+    </button>
 
-    <!-- 聊天窗口 -->
-    <div v-if="showAgent" class="agent-chat-window">
-      <!-- Header -->
+    <!-- 聊天面板 -->
+    <div v-if="isOpen" class="chat-panel">
+      <!-- 头部 -->
       <div class="chat-header">
         <div class="header-left">
-          <div class="agent-avatar">💎</div>
-          <div class="agent-info">
-            <div class="agent-name">Alice · An顾问</div>
-            <div class="agent-status">● 专业珠宝咨询服务</div>
+          <div class="agent-avatar">A</div>
+          <div class="header-info">
+            <h3>Alice 珠宝顾问</h3>
+            <p>专业咨询服务</p>
           </div>
         </div>
-        <button class="close-btn" @click="toggleAgent">✕</button>
+        <button class="close-button" @click="toggleAgent">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
 
-      <!-- Messages -->
-      <div class="chat-messages" ref="messagesContainer">
-        <div v-for="(msg, i) in messages" :key="i" class="msg-wrapper" :class="msg.role">
-          <div v-if="msg.role === 'assistant'" class="msg-avatar">💎</div>
-          <div class="msg-content">
-            <div class="msg-bubble">{{ msg.content }}</div>
-            <div v-if="msg.products && msg.products.length > 0" class="products-container">
-              <div class="products-title">为您推荐以下产品（点击查看详情）</div>
-              <div class="products-grid">
-                <div v-for="(product, pi) in msg.products" :key="pi" class="product-card" @click="openProduct(product)">
-                  <div class="product-image" v-if="product.image">
-                    <img :src="product.image" :alt="product.productName" @error="handleImageError" />
-                  </div>
-                  <div class="product-image product-placeholder" v-else>
-                    <span>💎</span>
-                  </div>
-                  <div class="product-info">
-                    <div class="product-brand">{{ product.brand }}</div>
-                    <div class="product-name">{{ product.productName }}</div>
-                    <div class="product-price">{{ product.price }}</div>
-                    <div class="product-source">来源: {{ product.source }}</div>
-                    <div class="product-link" v-if="product.url">点击查看详情 →</div>
-                  </div>
+      <!-- 消息区域 -->
+      <div class="messages-container" ref="messagesContainer">
+        <div
+          v-for="(message, index) in messages"
+          :key="index"
+          class="message-wrapper"
+          :class="{ 'user-message': message.role === 'user', 'assistant-message': message.role === 'assistant' }"
+        >
+          <div v-if="message.role === 'assistant'" class="message-avatar">A</div>
+          <div class="message-bubble">
+            <div class="message-content">{{ message.content }}</div>
+            <div v-if="message.products && message.products.length > 0" class="products-grid">
+              <div
+                v-for="(product, pIndex) in message.products"
+                :key="pIndex"
+                class="product-card"
+                @click="openProduct(product)"
+              >
+                <div class="product-image">
+                  <img v-if="product.image" :src="product.image" :alt="product.name" />
+                  <div v-else class="product-placeholder"></div>
+                </div>
+                <div class="product-info">
+                  <div class="product-name">{{ product.name }}</div>
+                  <div class="product-price">{{ product.price }}</div>
                 </div>
               </div>
             </div>
           </div>
-          <div v-if="msg.role === 'user'" class="msg-avatar user">👤</div>
         </div>
-        
-        <!-- Loading -->
-        <div v-if="loading" class="msg-wrapper assistant">
-          <div class="msg-avatar">💎</div>
-          <div class="msg-bubble loading">
+
+        <!-- Loading 状态 -->
+        <div v-if="isLoading" class="message-wrapper assistant-message">
+          <div class="message-avatar">A</div>
+          <div class="message-bubble">
             <div class="loading-dots">
-              <span></span><span></span><span></span>
+              <span></span>
+              <span></span>
+              <span></span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Quick questions -->
+      <!-- 快捷问题 -->
       <div class="quick-questions">
-        <button 
-          v-for="(q, i) in quickQuestions" 
-          :key="i"
-          class="quick-btn"
-          @click="sendQuickQuestion(q)"
-          :disabled="loading"
+        <button
+          v-for="(question, index) in quickQuestions"
+          :key="index"
+          class="quick-button"
+          @click="sendQuickQuestion(question)"
+          :disabled="isLoading"
         >
-          {{ q }}
+          {{ question }}
         </button>
       </div>
 
-      <!-- Input -->
-      <div class="chat-input">
-        <textarea
-          v-model="inputText"
-          @keydown.enter.prevent="sendMessage()"
-          placeholder="请输入您的珠宝咨询问题..."
-          rows="1"
-          ref="inputRef"
-        ></textarea>
-        <button 
-          class="send-btn" 
-          @click="sendMessage()"
-          :disabled="loading || !inputText.trim()"
+      <!-- 输入区域 -->
+      <div class="input-area">
+        <input
+          v-model="userInput"
+          @keyup.enter="sendMessage"
+          :disabled="isLoading"
+          placeholder="输入您的问题..."
+          class="message-input"
+        />
+        <button
+          @click="sendMessage"
+          :disabled="isLoading || !userInput.trim()"
+          class="send-button"
         >
-          ➤
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
         </button>
       </div>
     </div>
@@ -96,35 +113,33 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, watch } from 'vue'
-import { chatService } from '../services/chatService'
-import { QUICK_QUESTIONS } from '../config/chat.js'
+import { ref, onMounted, nextTick } from 'vue'
 
 export default {
   name: 'JewelryAgent',
   setup() {
-    const showAgent = ref(false)
+    const isOpen = ref(false)
+    const isLoading = ref(false)
+    const userInput = ref('')
+    const messagesContainer = ref(null)
+
     const messages = ref([
       {
-        role: "assistant",
-        content: "您好！我是璀璨珠宝的专属顾问「Alice」✨\n\n无论您是寻找求婚钻戒、生日礼物，还是想了解宝石知识，我都可以为您提供专业建议。请问有什么可以帮助您的？💎",
-      },
-    ])
-    const inputText = ref('')
-    const loading = ref(false)
-    const messagesContainer = ref(null)
-    const inputRef = ref(null)
-    const quickQuestions = QUICK_QUESTIONS
-    
-    const toggleAgent = () => {
-      showAgent.value = !showAgent.value
-      if (showAgent.value) {
-        nextTick(() => {
-          inputRef.value?.focus()
-        })
+        role: 'assistant',
+        content: '您好！我是 Alice 珠宝顾问。我可以帮您解答关于珠宝选购、保养、搭配等问题。请问有什么可以帮您的？'
       }
+    ])
+
+    const quickQuestions = ref([
+      '如何选择求婚钻戒',
+      '钻石 4C 标准是什么',
+      '如何保养珍珠项链'
+    ])
+
+    const toggleAgent = () => {
+      isOpen.value = !isOpen.value
     }
-    
+
     const scrollToBottom = () => {
       nextTick(() => {
         if (messagesContainer.value) {
@@ -132,134 +147,140 @@ export default {
         }
       })
     }
-    
-    watch(messages, () => {
-      scrollToBottom()
-    }, { deep: true })
-    
-    const sendMessage = async (text) => {
-      const userText = text || inputText.value.trim()
-      if (!userText || loading.value) return
 
-      inputText.value = ""
-      loading.value = true
+    const sendMessage = async () => {
+      if (!userInput.value.trim() || isLoading.value) return
+
+      const userMessage = userInput.value.trim()
+      userInput.value = ''
+      messages.value.push({ role: 'user', content: userMessage })
+      scrollToBottom()
+
+      isLoading.value = true
 
       try {
-        const updatedMessages = await chatService.sendMessage(messages.value, userText)
-        messages.value = updatedMessages
-      } catch (err) {
-        console.error('Send Message Error:', err)
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userMessage })
+        })
+
+        const data = await response.json()
+
+        messages.value.push({
+          role: 'assistant',
+          content: data.reply || '抱歉，我暂时无法回答您的问题。',
+          products: data.products || []
+        })
+      } catch (error) {
+        console.error('Chat error:', error)
+        messages.value.push({
+          role: 'assistant',
+          content: '网络错误，请稍后重试。'
+        })
       } finally {
-        loading.value = false
-        inputRef.value?.focus()
+        isLoading.value = false
+        scrollToBottom()
       }
     }
-    
+
     const sendQuickQuestion = (question) => {
-      sendMessage(question)
+      userInput.value = question
+      sendMessage()
     }
-    
+
     const openProduct = (product) => {
       if (product.url) {
         window.open(product.url, '_blank')
       }
     }
-    
-    const handleImageError = (e) => {
-      e.target.style.display = 'none'
-    }
-    
+
     onMounted(() => {
-      // 组件挂载时不需要检查登录状态，这个逻辑在父组件处理
+      // 组件挂载后的初始化
     })
-    
+
     return {
-      showAgent,
-      messages,
-      inputText,
-      loading,
+      isOpen,
+      isLoading,
+      userInput,
       messagesContainer,
-      inputRef,
+      messages,
       quickQuestions,
       toggleAgent,
       sendMessage,
       sendQuickQuestion,
-      openProduct,
-      handleImageError
+      openProduct
     }
   }
 }
 </script>
 
 <style scoped>
-.jewelry-agent-container {
+.jewelry-agent {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  z-index: 9999;
+  z-index: 1000;
 }
 
-/* 悬浮按钮 */
-.agent-fab {
+/* 浮动按钮 */
+.fab-button {
+  width: 56px;
+  height: 56px;
+  background: #d4a574;
+  border: none;
+  border-radius: 50%;
+  color: #0a0a0a;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #d4af37, #f5d060);
-  border-radius: 28px;
-  cursor: pointer;
-  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);
-  transition: all 0.3s ease;
+  justify-content: center;
+  box-shadow: 0 8px 16px rgba(212, 165, 116, 0.3);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
 }
 
-.agent-fab:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 28px rgba(212, 175, 55, 0.5);
+.fab-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 12px 24px rgba(212, 165, 116, 0.4);
 }
 
-.fab-icon {
-  font-size: 20px;
+.fab-button:active {
+  transform: scale(0.95);
 }
 
-.fab-text {
-  color: #1a0a0a;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-/* 聊天窗口 */
-.agent-chat-window {
-  width: 380px;
-  height: 580px;
-  background: linear-gradient(135deg, #1a0a0a 0%, #2d1515 40%, #1a0a2e 100%);
-  border-radius: 20px;
-  border: 1px solid rgba(212, 175, 55, 0.3);
+/* 聊天面板 */
+.chat-panel {
+  width: 384px;
+  height: 600px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-  animation: slideUp 0.3s ease;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  animation: panel-enter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes slideUp {
+@keyframes panel-enter {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: scale(0.9) translateY(20px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1) translateY(0);
   }
 }
 
-/* Chat Header */
+/* 头部 */
 .chat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.05));
-  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .header-left {
@@ -271,84 +292,85 @@ export default {
 .agent-avatar {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #d4af37, #f5d060);
+  background: #d4a574;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #0a0a0a;
+  font-weight: 600;
   font-size: 18px;
-  box-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
 }
 
-.agent-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.agent-name {
-  color: #f0d060;
+.header-info h3 {
+  margin: 0;
   font-size: 15px;
   font-weight: 600;
-  letter-spacing: 1px;
+  color: #ffffff;
 }
 
-.agent-status {
-  color: rgba(240, 208, 96, 0.6);
-  font-size: 11px;
+.header-info p {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.close-btn {
-  width: 28px;
-  height: 28px;
-  background: rgba(255, 255, 255, 0.1);
+.close-button {
+  width: 32px;
+  height: 32px;
+  background: transparent;
   border: none;
-  border-radius: 50%;
+  border-radius: 6px;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
 }
 
-.close-btn:hover {
-  background: rgba(255, 82, 82, 0.3);
-  color: #ff5252;
+.close-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }
 
-/* Chat Messages */
-.chat-messages {
+/* 消息区域 */
+.messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
-.chat-messages::-webkit-scrollbar {
-  width: 4px;
+.messages-container::-webkit-scrollbar {
+  width: 6px;
 }
 
-.chat-messages::-webkit-scrollbar-track {
+.messages-container::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.chat-messages::-webkit-scrollbar-thumb {
-  background: rgba(212, 175, 55, 0.3);
-  border-radius: 2px;
+.messages-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
 
-.msg-wrapper {
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.message-wrapper {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  animation: fadeIn 0.3s ease;
+  gap: 10px;
+  animation: message-enter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes fadeIn {
+@keyframes message-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -356,120 +378,82 @@ export default {
   }
 }
 
-.msg-wrapper.user {
+.user-message {
   justify-content: flex-end;
 }
 
-.msg-wrapper.assistant {
+.assistant-message {
   justify-content: flex-start;
 }
 
-.msg-avatar {
+.message-avatar {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, #d4af37, #f5d060);
+  background: #d4a574;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  color: #0a0a0a;
+  font-weight: 600;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
-.msg-avatar.user {
-  background: linear-gradient(135deg, #8b1a4a, #c06080);
+.message-bubble {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.msg-bubble {
-  max-width: 70%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: 13px;
-  line-height: 1.6;
+.user-message .message-bubble {
+  background: #d4a574;
+  color: #0a0a0a;
+  border-bottom-right-radius: 4px;
+}
+
+.assistant-message .message-bubble {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-bottom-left-radius: 4px;
+}
+
+.message-content {
   white-space: pre-wrap;
 }
 
-.msg-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 75%;
-}
-
-.msg-wrapper.user .msg-content {
-  align-items: flex-end;
-}
-
-.msg-wrapper.assistant .msg-content {
-  align-items: flex-start;
-}
-
-.msg-wrapper.user .msg-bubble {
-  background: linear-gradient(135deg, #8b1a4a, #6b0f38);
-  border: 1px solid rgba(180, 60, 100, 0.4);
-  color: #ffe0ec;
-  border-radius: 16px 4px 16px 16px;
-  max-width: 100%;
-}
-
-.msg-wrapper.assistant .msg-bubble {
-  background: rgba(212, 175, 55, 0.08);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  color: #e8d5a3;
-  border-radius: 4px 16px 16px 16px;
-  max-width: 100%;
-}
-
-.products-container {
-  background: rgba(10, 5, 20, 0.9);
-  border: 1px solid rgba(212, 175, 55, 0.3);
-  border-radius: 12px;
-  padding: 12px;
-  margin-top: 4px;
-}
-
-.products-title {
-  color: #d4af37;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
-}
-
+/* 产品推荐 */
 .products-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .product-card {
   display: flex;
-  gap: 10px;
-  background: rgba(212, 175, 55, 0.05);
-  border: 1px solid rgba(212, 175, 55, 0.15);
+  gap: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  padding: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .product-card:hover {
-  background: rgba(212, 175, 55, 0.1);
-  border-color: rgba(212, 175, 55, 0.4);
-  transform: translateX(2px);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(212, 165, 116, 0.3);
 }
 
 .product-image {
-  width: 50px;
-  height: 50px;
+  width: 48px;
+  height: 48px;
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
-  background: rgba(212, 175, 55, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .product-image img {
@@ -479,176 +463,163 @@ export default {
 }
 
 .product-placeholder {
-  font-size: 20px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(212, 165, 116, 0.2), rgba(212, 165, 116, 0.05));
 }
 
 .product-info {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.product-brand {
-  color: #d4af37;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
 }
 
 .product-name {
-  color: #e8d5a3;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .product-price {
-  color: #f0d060;
-  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
   font-weight: 600;
+  color: #d4a574;
 }
 
-.product-source {
-  color: rgba(232, 213, 163, 0.6);
-  font-size: 9px;
-}
-
-.product-link {
-  color: #d4af37;
-  font-size: 10px;
-  margin-top: 2px;
-  font-weight: 500;
-}
-
-.msg-bubble.loading {
-  padding: 12px 16px;
-}
-
+/* Loading 动画 */
 .loading-dots {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
+  padding: 4px 0;
 }
 
 .loading-dots span {
-  width: 6px;
-  height: 6px;
-  background: #d4af37;
+  width: 8px;
+  height: 8px;
+  background: #d4a574;
   border-radius: 50%;
-  animation: pulse 1.2s ease infinite;
+  animation: loading-bounce 1.4s ease-in-out infinite;
 }
 
 .loading-dots span:nth-child(2) {
-  animation-delay: 0.2s;
+  animation-delay: 0.16s;
 }
 
 .loading-dots span:nth-child(3) {
-  animation-delay: 0.4s;
+  animation-delay: 0.32s;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.3;
+@keyframes loading-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
   }
-  50% {
+  40% {
+    transform: scale(1);
     opacity: 1;
   }
 }
 
-/* Quick Questions */
+/* 快捷问题 */
 .quick-questions {
   display: flex;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px 20px;
   overflow-x: auto;
-  background: rgba(10, 5, 20, 0.7);
-  border-top: 1px solid rgba(212, 175, 55, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .quick-questions::-webkit-scrollbar {
   height: 0;
 }
 
-.quick-btn {
-  background: rgba(212, 175, 55, 0.1);
-  border: 1px solid rgba(212, 175, 55, 0.25);
-  color: #d4af37;
-  font-size: 11px;
-  padding: 5px 10px;
+.quick-button {
+  padding: 6px 12px;
+  background: rgba(212, 165, 116, 0.1);
+  border: 1px solid rgba(212, 165, 116, 0.2);
   border-radius: 16px;
+  color: #d4a574;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
 }
 
-.quick-btn:hover {
-  background: rgba(212, 175, 55, 0.2);
-  transform: translateY(-1px);
+.quick-button:hover:not(:disabled) {
+  background: rgba(212, 165, 116, 0.2);
+  border-color: rgba(212, 165, 116, 0.4);
 }
 
-.quick-btn:disabled {
+.quick-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Chat Input */
-.chat-input {
+/* 输入区域 */
+.input-area {
   display: flex;
   gap: 10px;
-  padding: 12px 16px;
-  background: rgba(15, 8, 25, 0.85);
-  border-top: 1px solid rgba(212, 175, 55, 0.2);
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.chat-input textarea {
+.message-input {
   flex: 1;
-  background: rgba(212, 175, 55, 0.06);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  border-radius: 12px;
-  padding: 8px 12px;
-  color: #e8d5a3;
-  font-size: 13px;
-  resize: none;
-  font-family: inherit;
-  line-height: 1.5;
-  max-height: 80px;
-  overflow-y: auto;
-}
-
-.chat-input textarea:focus {
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 14px;
   outline: none;
-  border-color: rgba(212, 175, 55, 0.4);
+  transition: border-color 0.2s;
 }
 
-.chat-input textarea::placeholder {
-  color: rgba(232, 213, 163, 0.5);
+.message-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
 }
 
-.send-btn {
-  width: 38px;
-  height: 38px;
-  background: linear-gradient(135deg, #d4af37, #f0d060);
+.message-input:focus {
+  border-color: #d4a574;
+}
+
+.message-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.send-button {
+  width: 40px;
+  height: 40px;
+  background: #d4a574;
   border: none;
-  border-radius: 50%;
-  color: #1a0a0a;
+  border-radius: 8px;
+  color: #0a0a0a;
   cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.1s;
 }
 
-.send-btn:hover:not(:disabled) {
-  transform: scale(1.05);
+.send-button:hover:not(:disabled) {
+  background: #c49564;
 }
 
-.send-btn:disabled {
-  background: rgba(212, 175, 55, 0.2);
-  color: rgba(212, 175, 55, 0.4);
+.send-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.send-button:disabled {
+  background: rgba(212, 165, 116, 0.3);
+  color: rgba(10, 10, 10, 0.3);
   cursor: not-allowed;
 }
 </style>
