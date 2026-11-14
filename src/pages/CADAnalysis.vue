@@ -1,25 +1,20 @@
 <template>
-  <div class="min-h-screen bg-[#0a0a0a] text-white">
-    <div class="max-w-7xl mx-auto px-6 py-10">
-
+  <div class="cad-analysis-page">
+    <div class="cad-analysis-container">
       <!-- 标题区 -->
-      <div class="mb-10">
-        <h1 class="text-4xl font-bold tracking-tight text-white">CAD 图纸 AI 分析</h1>
-        <p class="text-base text-gray-400 mt-2">上传 CAD 图纸，AI 自动识别风险并给出优化建议</p>
+      <div class="page-header">
+        <h1 class="page-title">CAD 图纸 AI 分析</h1>
+        <p class="page-description">上传 CAD 图纸，AI 自动识别风险并给出优化建议</p>
       </div>
 
       <!-- 上传区域 -->
       <div
         v-if="!previewUrl && !analysisResult"
-        class="relative mb-10 transition-all duration-300"
+        class="upload-section"
       >
         <div
-          class="upload-zone border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300"
-          :class="[
-            isDragOver
-              ? 'border-[#d4a574] bg-[#d4a574]/5'
-              : 'border-white/20 hover:border-[#d4a574]/60'
-          ]"
+          class="upload-zone"
+          :class="{ 'drag-over': isDragOver }"
           @dragover.prevent="onDragOver"
           @dragleave.prevent="onDragLeave"
           @drop.prevent="onDrop"
@@ -30,23 +25,20 @@
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
             @change="onFileSelect"
-            class="hidden"
+            class="file-input-hidden"
           />
-          <div class="py-20 px-8 flex flex-col items-center">
-            <svg class="w-16 h-16 text-gray-500 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="upload-content">
+            <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p class="text-lg text-gray-300 mb-2">拖拽图片到这里，或 <span class="text-[#d4a574] underline underline-offset-2">点击选择文件</span></p>
-            <p class="text-sm text-gray-500">支持 JPG / PNG / WebP，最大 10MB</p>
+            <p class="upload-text">拖拽图片到这里，或 <span class="upload-link">点击选择文件</span></p>
+            <p class="upload-hint">支持 JPG / PNG / WebP，最大 10MB</p>
           </div>
         </div>
 
         <!-- 上传错误 -->
-        <div
-          v-if="uploadError"
-          class="mt-4 px-4 py-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-400 text-sm"
-        >
+        <div v-if="uploadError" class="error-message">
           {{ uploadError }}
         </div>
       </div>
@@ -54,91 +46,72 @@
       <!-- 上传后预览 -->
       <div
         v-if="previewUrl && !analysisResult && !analyzing"
-        class="mb-10 animate-fade-in"
+        class="preview-section"
       >
-        <div class="relative rounded-2xl overflow-hidden border border-white/10">
-          <img :src="previewUrl" alt="预览" class="w-full max-h-[480px] object-contain bg-black/40" />
-          <div class="absolute bottom-0 left-0 right-0 bg-black/70 p-5 flex gap-3 justify-center">
-            <button
-              class="px-5 py-2.5 rounded-lg bg-white/10 border border-white/15 text-white text-sm font-medium hover:bg-white/15 transition-colors"
-              @click="replaceImage"
-            >
-              替换图片
-            </button>
-            <button
-              class="px-5 py-2.5 rounded-lg bg-[#d4a574] text-black text-sm font-semibold hover:bg-[#c4955f] transition-colors"
-              @click="startAnalysis"
-            >
-              开始分析
-            </button>
+        <div class="preview-card">
+          <img :src="previewUrl" alt="预览" class="preview-image" />
+          <div class="preview-actions">
+            <button class="btn btn-secondary" @click="replaceImage">替换图片</button>
+            <button class="btn btn-primary" @click="startAnalysis">开始分析</button>
           </div>
         </div>
       </div>
 
       <!-- Loading 上传中 -->
-      <div v-if="uploading" class="mb-10 animate-fade-in">
-        <div class="rounded-xl border border-white/10 bg-white/[0.03] p-8">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-sm text-gray-300">正在上传图片...</span>
-            <span class="text-sm font-mono text-[#d4a574]">{{ uploadProgress }}%</span>
+      <div v-if="uploading" class="loading-section">
+        <div class="loading-card">
+          <div class="loading-header">
+            <span class="loading-text">正在上传图片...</span>
+            <span class="loading-percent">{{ uploadProgress }}%</span>
           </div>
-          <div class="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-            <div
-              class="h-full bg-[#d4a574] rounded-full transition-all duration-300"
-              :style="{ width: uploadProgress + '%' }"
-            ></div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
           </div>
         </div>
       </div>
 
       <!-- 分析中 -->
-      <div v-if="analyzing && !analysisResult" class="mb-10 animate-fade-in">
-        <div class="rounded-xl border border-white/10 bg-white/[0.03] p-10">
+      <div v-if="analyzing && !analysisResult" class="analyzing-section">
+        <div class="analyzing-card">
           <!-- 骨架屏预览 -->
-          <div class="grid grid-cols-[3fr_2fr] gap-8 mb-10">
-            <div class="space-y-4">
-              <div class="h-6 w-40 bg-white/10 rounded animate-pulse"></div>
-              <div class="aspect-[4/3] bg-white/[0.05] rounded-xl animate-pulse"></div>
+          <div class="skeleton-grid">
+            <div class="skeleton-left">
+              <div class="skeleton-title"></div>
+              <div class="skeleton-image"></div>
             </div>
-            <div class="space-y-4">
-              <div class="h-6 w-32 bg-white/10 rounded animate-pulse"></div>
-              <div class="space-y-3">
-                <div class="h-4 bg-white/[0.07] rounded animate-pulse"></div>
-                <div class="h-4 bg-white/[0.07] rounded w-5/6 animate-pulse"></div>
-                <div class="h-4 bg-white/[0.07] rounded w-4/6 animate-pulse"></div>
-                <div class="h-4 bg-white/[0.07] rounded w-3/4 animate-pulse"></div>
+            <div class="skeleton-right">
+              <div class="skeleton-subtitle"></div>
+              <div class="skeleton-lines">
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line line-long"></div>
+                <div class="skeleton-line line-medium"></div>
+                <div class="skeleton-line line-short"></div>
               </div>
             </div>
           </div>
 
           <!-- 步骤指示器 -->
-          <div class="flex items-center justify-center gap-0">
+          <div class="steps-container">
             <template v-for="(step, i) in analysisSteps" :key="i">
-              <div class="flex flex-col items-center gap-2 min-w-[100px]">
+              <div class="step-item">
                 <div
-                  class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-500"
-                  :class="[
-                    analysisStep > i + 1
-                      ? 'bg-[#d4a574] text-black'
-                      : analysisStep === i + 1
-                        ? 'bg-[#d4a574]/20 border-2 border-[#d4a574] text-[#d4a574] animate-pulse'
-                        : 'bg-white/5 border border-white/10 text-gray-500'
-                  ]"
+                  class="step-circle"
+                  :class="{
+                    'step-completed': analysisStep > i + 1,
+                    'step-active': analysisStep === i + 1
+                  }"
                 >
-                  <svg v-if="analysisStep > i + 1" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg v-if="analysisStep > i + 1" class="step-check" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                   </svg>
                   <span v-else>{{ i + 1 }}</span>
                 </div>
-                <span
-                  class="text-xs transition-colors duration-300"
-                  :class="analysisStep >= i + 1 ? 'text-white' : 'text-gray-500'"
-                >{{ step }}</span>
+                <span class="step-label" :class="{ 'label-active': analysisStep >= i + 1 }">{{ step }}</span>
               </div>
               <div
                 v-if="i < analysisSteps.length - 1"
-                class="h-px w-16 mb-6 transition-colors duration-500"
-                :class="analysisStep > i + 1 ? 'bg-[#d4a574]/40' : 'bg-white/10'"
+                class="step-connector"
+                :class="{ 'connector-completed': analysisStep > i + 1 }"
               ></div>
             </template>
           </div>
@@ -146,104 +119,78 @@
       </div>
 
       <!-- 分析结果 -->
-      <div
-        v-if="analysisResult && !analyzing"
-        class="mb-10 animate-slide-in"
-      >
+      <div v-if="analysisResult && !analyzing" class="result-section">
         <!-- 操作栏 -->
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-semibold text-white">分析结果</h2>
-          <button
-            class="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-gray-300 text-sm hover:bg-white/10 transition-colors"
-            @click="resetAll"
-          >
-            分析新图纸
-          </button>
+        <div class="result-header">
+          <h2 class="result-title">分析结果</h2>
+          <button class="btn btn-secondary" @click="resetAll">分析新图纸</button>
         </div>
 
         <!-- 主结果网格 -->
-        <div class="grid grid-cols-[3fr_2fr] gap-8 mb-10">
+        <div class="result-grid">
           <!-- 左侧：标注图片 -->
-          <div>
-            <h3 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">标注图纸</h3>
-            <div class="rounded-xl border border-white/10 overflow-hidden bg-black/30">
+          <div class="result-column">
+            <h3 class="section-label">标注图纸</h3>
+            <div class="image-container">
               <img
                 v-if="annotatedImageUrl"
                 :src="annotatedImageUrl"
                 alt="AI 标注结果"
-                class="w-full max-h-[600px] object-contain"
+                class="annotated-image"
               />
-              <div v-else class="py-20 flex items-center justify-center text-gray-500 text-sm">
-                无标注图片
-              </div>
+              <div v-else class="empty-image">无标注图片</div>
             </div>
           </div>
 
           <!-- 右侧：Markdown 报告 -->
-          <div>
-            <h3 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">分析报告</h3>
-            <div
-              class="rounded-xl border border-white/10 bg-white/[0.03] p-6 max-h-[600px] overflow-y-auto markdown-body"
-              v-html="renderedMarkdown"
-            ></div>
+          <div class="result-column">
+            <h3 class="section-label">分析报告</h3>
+            <div class="report-container markdown-body" v-html="renderedMarkdown"></div>
           </div>
         </div>
 
         <!-- 风险反馈区 -->
-        <div v-if="riskItems.length > 0" class="mb-10">
-          <h3 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">风险项反馈</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div v-if="riskItems.length > 0" class="feedback-section">
+          <h3 class="section-label">风险项反馈</h3>
+          <div class="risk-grid">
             <div
               v-for="(risk, index) in riskItems"
               :key="index"
-              class="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden transition-colors hover:border-white/20"
+              class="risk-card"
             >
               <!-- 顶部：风险等级徽章 -->
-              <div class="px-5 pt-4 pb-2 flex items-center gap-2">
-                <span
-                  class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold"
-                  :class="{
-                    'bg-red-500/15 text-red-400 border border-red-500/20': risk.level === 'high',
-                    'bg-amber-500/15 text-amber-400 border border-amber-500/20': risk.level === 'medium',
-                    'bg-sky-500/15 text-sky-400 border border-sky-500/20': risk.level === 'low'
-                  }"
-                >
-                  {{ risk.levelText }}
-                </span>
-                <span class="text-sm font-medium text-white truncate">{{ risk.title }}</span>
+              <div class="risk-header">
+                <span class="risk-badge" :class="'badge-' + risk.level">{{ risk.levelText }}</span>
+                <span class="risk-title">{{ risk.title }}</span>
               </div>
 
               <!-- 中间：风险描述 -->
-              <div class="px-5 pb-3">
-                <p class="text-sm text-gray-400 leading-relaxed line-clamp-3">{{ risk.description }}</p>
+              <div class="risk-body">
+                <p class="risk-description">{{ risk.description }}</p>
               </div>
 
               <!-- 底部：操作按钮 -->
-              <div class="px-5 pb-4 flex items-center gap-2 flex-wrap">
+              <div class="risk-footer">
                 <template v-if="!risk.submitted">
                   <button
-                    class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    :class="risk.feedback === 'agree'
-                      ? 'bg-[#d4a574]/20 text-[#d4a574] border border-[#d4a574]/30'
-                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'"
+                    class="feedback-btn"
+                    :class="{ 'btn-agree': risk.feedback === 'agree' }"
                     :disabled="risk.submitting"
                     @click="setFeedback(index, 'agree')"
                   >
                     {{ risk.submitting && risk.feedback === 'agree' ? '提交中...' : '同意分析' }}
                   </button>
                   <button
-                    class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    :class="risk.feedback === 'correct'
-                      ? 'bg-white/10 text-white border border-white/20'
-                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'"
+                    class="feedback-btn"
+                    :class="{ 'btn-correct': risk.feedback === 'correct' }"
                     @click="setFeedback(index, 'correct')"
                   >
                     需要修正
                   </button>
                 </template>
                 <template v-else>
-                  <span class="inline-flex items-center gap-1.5 text-xs text-green-400">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <span class="submitted-text">
+                    <svg class="check-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                     </svg>
                     已处理
@@ -252,18 +199,15 @@
               </div>
 
               <!-- 修正输入区 -->
-              <div
-                v-if="risk.feedback === 'correct' && !risk.submitted"
-                class="border-t border-white/5 px-5 py-4 animate-fade-in"
-              >
+              <div v-if="risk.feedback === 'correct' && !risk.submitted" class="correction-area">
                 <textarea
                   v-model="risk.correction"
                   placeholder="请输入正确的分析结果..."
                   rows="3"
-                  class="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 resize-y focus:outline-none focus:border-[#d4a574]/50 transition-colors"
+                  class="correction-input"
                 ></textarea>
                 <button
-                  class="mt-3 px-4 py-2 rounded-lg bg-[#d4a574] text-black text-xs font-semibold hover:bg-[#c4955f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  class="btn btn-primary btn-small"
                   :disabled="!risk.correction.trim() || risk.submitting"
                   @click="submitCorrection(index)"
                 >
@@ -274,19 +218,15 @@
           </div>
 
           <!-- 批量提交反馈 -->
-          <div class="mt-6 flex items-center gap-4">
+          <div class="submit-area">
             <button
-              class="px-6 py-2.5 rounded-lg bg-[#d4a574] text-black text-sm font-semibold hover:bg-[#c4955f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              class="btn btn-primary"
               :disabled="!hasFeedback || submittingFeedback"
               @click="submitFeedback"
             >
               {{ submittingFeedback ? '提交中...' : '提交反馈' }}
             </button>
-            <span
-              v-if="feedbackMessage"
-              class="text-sm"
-              :class="feedbackSuccess ? 'text-green-400' : 'text-red-400'"
-            >
+            <span v-if="feedbackMessage" class="feedback-message" :class="{ 'message-success': feedbackSuccess }">
               {{ feedbackMessage }}
             </span>
           </div>
@@ -294,53 +234,42 @@
       </div>
 
       <!-- 历史记录 -->
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-sm font-medium text-gray-400 uppercase tracking-wider">历史分析</h3>
+      <div class="history-section">
+        <div class="history-header">
+          <h3 class="section-label">历史分析</h3>
           <button
-            class="p-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+            class="btn-icon"
             :disabled="loadingHistory"
             @click="loadHistory"
           >
-            <svg class="w-4 h-4" :class="{ 'animate-spin': loadingHistory }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="refresh-icon" :class="{ 'rotating': loadingHistory }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.001 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
 
-        <div v-if="loadingHistory && history.length === 0" class="text-sm text-gray-500 py-6 text-center">
-          加载中...
-        </div>
-
-        <div v-else-if="history.length === 0" class="text-sm text-gray-500 py-6 text-center border border-dashed border-white/10 rounded-xl">
-          暂无历史记录
-        </div>
-
-        <div v-else class="history-scroll flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+        <div v-if="loadingHistory && history.length === 0" class="empty-state">加载中...</div>
+        <div v-else-if="history.length === 0" class="empty-state">暂无历史记录</div>
+        <div v-else class="history-scroll">
           <div
             v-for="item in history"
             :key="item.id || item.image_hash"
-            class="group flex-shrink-0 cursor-pointer transition-transform duration-200 hover:scale-105"
+            class="history-item"
             @click="viewHistoryItem(item)"
           >
-            <div class="w-24 h-24 rounded-lg overflow-hidden border border-white/10 bg-black/30 group-hover:border-[#d4a574]/40 transition-colors">
-              <img
-                v-if="item.thumbnail"
-                :src="item.thumbnail"
-                alt="缩略图"
-                class="w-full h-full object-cover"
-              />
-              <div v-else class="w-full h-full flex items-center justify-center text-gray-600">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="history-thumbnail">
+              <img v-if="item.thumbnail" :src="item.thumbnail" alt="缩略图" class="thumbnail-image" />
+              <div v-else class="thumbnail-placeholder">
+                <svg class="placeholder-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                     d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
             </div>
-            <div class="mt-2 w-24">
-              <p class="text-xs text-gray-400 truncate">{{ formatTime(item.created_at || item.timestamp) }}</p>
-              <p class="text-[10px] text-gray-600 font-mono truncate">{{ item.image_hash || 'N/A' }}</p>
+            <div class="history-info">
+              <p class="history-time">{{ formatTime(item.created_at || item.timestamp) }}</p>
+              <p class="history-hash">{{ item.image_hash || 'N/A' }}</p>
             </div>
           </div>
         </div>
@@ -808,85 +737,850 @@ export default {
 </script>
 
 <style scoped>
-/* Markdown 渲染样式 */
+.cad-analysis-page {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 2.5rem 1.5rem;
+}
+
+.cad-analysis-container {
+  max-width: 80rem;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 2.5rem;
+}
+
+.page-title {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+  margin: 0 0 0.5rem 0;
+}
+
+.page-description {
+  font-size: 1rem;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+/* 上传区域 */
+.upload-section {
+  margin-bottom: 2.5rem;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.upload-zone:hover {
+  border-color: var(--accent-hover);
+}
+
+.upload-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.upload-content {
+  padding: 5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.upload-icon {
+  width: 4rem;
+  height: 4rem;
+  color: var(--muted-foreground);
+  margin-bottom: 1.5rem;
+}
+
+.upload-text {
+  font-size: 1.125rem;
+  color: var(--foreground);
+  margin: 0 0 0.5rem 0;
+}
+
+.upload-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.upload-hint {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+.error-message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--error-border);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+/* 预览区域 */
+.preview-section {
+  margin-bottom: 2.5rem;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.preview-card {
+  position: relative;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.preview-image {
+  width: 100%;
+  max-height: 30rem;
+  object-fit: contain;
+  background: var(--card-bg);
+  display: block;
+}
+
+.preview-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  padding: 1.25rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+/* Loading 区域 */
+.loading-section {
+  margin-bottom: 2.5rem;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.loading-card {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 2rem;
+}
+
+.loading-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.loading-text {
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.loading-percent {
+  font-size: 0.875rem;
+  font-family: monospace;
+  color: var(--accent);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--border);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0.25rem;
+  transition: width 0.3s ease;
+}
+
+/* 分析中区域 */
+.analyzing-section {
+  margin-bottom: 2.5rem;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.analyzing-card {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 2.5rem;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+.skeleton-left,
+.skeleton-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.skeleton-title,
+.skeleton-subtitle {
+  height: 1.5rem;
+  background: var(--skeleton);
+  border-radius: 0.25rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.skeleton-title {
+  width: 10rem;
+}
+
+.skeleton-subtitle {
+  width: 8rem;
+}
+
+.skeleton-image {
+  aspect-ratio: 4/3;
+  background: var(--skeleton-light);
+  border-radius: 0.75rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeleton-line {
+  height: 1rem;
+  background: var(--skeleton-lighter);
+  border-radius: 0.25rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.line-long {
+  width: 83%;
+}
+
+.line-medium {
+  width: 67%;
+}
+
+.line-short {
+  width: 75%;
+}
+
+.steps-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 100px;
+}
+
+.step-circle {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.5s ease;
+  background: var(--step-bg);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.step-completed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.step-active {
+  background: var(--step-active-bg);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.step-check {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.step-label {
+  font-size: 0.75rem;
+  transition: color 0.3s ease;
+  color: var(--muted-foreground);
+}
+
+.label-active {
+  color: var(--foreground);
+}
+
+.step-connector {
+  height: 1px;
+  width: 4rem;
+  margin-bottom: 1.5rem;
+  transition: background 0.5s ease;
+  background: var(--border);
+}
+
+.connector-completed {
+  background: var(--accent-border);
+}
+
+/* 结果区域 */
+.result-section {
+  margin-bottom: 2.5rem;
+  animation: slideIn 0.5s ease-out;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.result-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+.result-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.section-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  margin: 0 0 0.75rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.image-container {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--image-bg);
+  min-height: 20rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.annotated-image {
+  width: 100%;
+  max-height: 37.5rem;
+  object-fit: contain;
+  display: block;
+}
+
+.empty-image {
+  padding: 5rem 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.report-container {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 1.5rem;
+  max-height: 37.5rem;
+  overflow-y: auto;
+}
+
+/* 反馈区域 */
+.feedback-section {
+  margin-bottom: 2.5rem;
+}
+
+.risk-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .risk-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.risk-card {
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.risk-card:hover {
+  border-color: var(--border-hover);
+}
+
+.risk-header {
+  padding: 1rem 1.25rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-high {
+  background: var(--badge-high-bg);
+  color: var(--badge-high);
+  border: 1px solid var(--badge-high-border);
+}
+
+.badge-medium {
+  background: var(--badge-medium-bg);
+  color: var(--badge-medium);
+  border: 1px solid var(--badge-medium-border);
+}
+
+.badge-low {
+  background: var(--badge-low-bg);
+  color: var(--badge-low);
+  border: 1px solid var(--badge-low-border);
+}
+
+.risk-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.risk-body {
+  padding: 0 1.25rem 0.75rem;
+}
+
+.risk-description {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.risk-footer {
+  padding: 0 1.25rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.feedback-btn {
+  padding: 0.375rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.feedback-btn:hover:not(:disabled) {
+  background: var(--btn-hover);
+}
+
+.feedback-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-agree {
+  background: var(--btn-agree-bg);
+  color: var(--accent);
+  border-color: var(--btn-agree-border);
+}
+
+.btn-correct {
+  background: var(--btn-correct-bg);
+  color: var(--foreground);
+  border-color: var(--btn-correct-border);
+}
+
+.submitted-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--success);
+}
+
+.check-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.correction-area {
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.correction-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.correction-input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+.correction-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.submit-area {
+  margin-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.feedback-message {
+  font-size: 0.875rem;
+}
+
+.message-success {
+  color: var(--success);
+}
+
+/* 历史记录 */
+.history-section {
+  margin-bottom: 2.5rem;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.btn-icon {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-icon:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--btn-hover);
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.rotating {
+  animation: rotate 1s linear infinite;
+}
+
+.empty-state {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  padding: 1.5rem 0;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+}
+
+.history-scroll {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+.history-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.history-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 3px;
+}
+
+.history-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+.history-item {
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.history-item:hover {
+  transform: scale(1.05);
+}
+
+.history-thumbnail {
+  width: 6rem;
+  height: 6rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  transition: border-color 0.2s ease;
+}
+
+.history-item:hover .history-thumbnail {
+  border-color: var(--accent-border);
+}
+
+.thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.placeholder-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.history-info {
+  margin-top: 0.5rem;
+  width: 6rem;
+}
+
+.history-time {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 0 0.25rem 0;
+}
+
+.history-hash {
+  font-size: 0.625rem;
+  color: var(--muted-foreground-light);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+/* Markdown 渲染 */
 .markdown-body :deep(h1) {
   font-size: 1.4rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--foreground);
   margin: 1rem 0 0.5rem;
 }
+
 .markdown-body :deep(h2) {
   font-size: 1.2rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--foreground);
   margin: 0.875rem 0 0.5rem;
 }
+
 .markdown-body :deep(h3) {
   font-size: 1.05rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--foreground);
   margin: 0.75rem 0 0.375rem;
 }
+
 .markdown-body :deep(p) {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--foreground);
   line-height: 1.7;
   font-size: 0.9rem;
   margin: 0.5rem 0;
 }
+
 .markdown-body :deep(strong) {
-  color: #d4a574;
+  color: var(--accent);
   font-weight: 600;
 }
+
 .markdown-body :deep(em) {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--muted-foreground);
+  font-style: italic;
 }
+
 .markdown-body :deep(code) {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--code-bg);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
   font-size: 0.85em;
-  color: #d4a574;
+  color: var(--accent);
 }
+
 .markdown-body :deep(pre) {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 12px;
-  border-radius: 8px;
+  background: var(--pre-bg);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
   overflow-x: auto;
   margin: 0.75rem 0;
 }
+
 .markdown-body :deep(pre code) {
   background: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--foreground);
 }
+
 .markdown-body :deep(ul) {
   padding-left: 1.25rem;
   margin: 0.5rem 0;
 }
+
 .markdown-body :deep(li) {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--foreground);
   font-size: 0.9rem;
   margin: 0.25rem 0;
   line-height: 1.6;
 }
 
-/* 历史记录横向滚动 */
-.history-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+/* 按钮 */
+.btn {
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--border);
 }
-.history-scroll::-webkit-scrollbar {
-  height: 6px;
+
+.btn-secondary {
+  background: var(--btn-bg);
+  color: var(--foreground);
 }
-.history-scroll::-webkit-scrollbar-track {
-  background: transparent;
+
+.btn-secondary:hover {
+  background: var(--btn-hover);
 }
-.history-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
 }
-.history-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 /* 动画 */
@@ -912,19 +1606,42 @@ export default {
   }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
-.animate-slide-in {
-  animation: slideIn 0.5s ease-out forwards;
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* line-clamp */
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* 响应式 */
+@media (max-width: 768px) {
+  .result-grid,
+  .skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-title {
+    font-size: 1.75rem;
+  }
+
+  .steps-container {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .step-connector {
+    display: none;
+  }
 }
 </style>

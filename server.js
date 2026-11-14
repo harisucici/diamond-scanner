@@ -1999,6 +1999,147 @@ app.get('/api/cad/learn', async (req, res) => {
   }
 })
 
+// ============================================================
+// Social Media Search API — TikTok & Instagram
+// ============================================================
+
+/**
+ * GET /api/social-items
+ * Returns saved TikTok and Instagram items
+ */
+app.get('/api/social-items', async (req, res) => {
+  try {
+    const tiktokItems = await queryData(TABLES.SOCIAL_TIKTOK, null, 10000)
+    const instagramItems = await queryData(TABLES.SOCIAL_INSTAGRAM, null, 10000)
+    
+    res.json({
+      success: true,
+      tiktok: tiktokItems,
+      instagram: instagramItems
+    })
+  } catch (error) {
+    console.error('Social Items GET Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '获取社交收藏失败',
+      message: error.message
+    })
+  }
+})
+
+/**
+ * POST /api/social-items
+ * Body: { tiktok: [], instagram: [] }
+ * Saves TikTok and Instagram items (replaces all existing data)
+ */
+app.post('/api/social-items', async (req, res) => {
+  try {
+    const { tiktok, instagram } = req.body
+
+    console.log('📱 社交收藏保存请求')
+
+    // Clear existing data
+    await deleteData(TABLES.SOCIAL_TIKTOK)
+    await deleteData(TABLES.SOCIAL_INSTAGRAM)
+
+    // Insert new TikTok items
+    if (tiktok && tiktok.length > 0) {
+      const tiktokRecords = tiktok.map((item, idx) => ({
+        id: `tiktok_${Date.now()}_${idx}`,
+        ...item
+      }))
+      await insertData(TABLES.SOCIAL_TIKTOK, tiktokRecords)
+      console.log(`✅ TikTok: 保存 ${tiktokRecords.length} 条`)
+    }
+
+    // Insert new Instagram items
+    if (instagram && instagram.length > 0) {
+      const instagramRecords = instagram.map((item, idx) => ({
+        id: `instagram_${Date.now()}_${idx}`,
+        ...item
+      }))
+      await insertData(TABLES.SOCIAL_INSTAGRAM, instagramRecords)
+      console.log(`✅ Instagram: 保存 ${instagramRecords.length} 条`)
+    }
+
+    res.json({
+      success: true,
+      message: '社交收藏已保存',
+      tiktokCount: tiktok?.length || 0,
+      instagramCount: instagram?.length || 0
+    })
+  } catch (error) {
+    console.error('Social Items POST Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '保存社交收藏失败',
+      message: error.message
+    })
+  }
+})
+
+/**
+ * GET /api/social-summary
+ * Returns saved summary text
+ */
+app.get('/api/social-summary', async (req, res) => {
+  try {
+    const summaries = await queryData(TABLES.SOCIAL_SUMMARY, null, 1)
+    const summary = summaries.length > 0 ? summaries[0].content : ''
+    
+    res.json({
+      success: true,
+      summary
+    })
+  } catch (error) {
+    console.error('Social Summary GET Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '获取总结失败',
+      message: error.message
+    })
+  }
+})
+
+/**
+ * POST /api/social-summary
+ * Body: { summary: string }
+ * Saves summary text (single record, upsert)
+ */
+app.post('/api/social-summary', async (req, res) => {
+  try {
+    const { summary } = req.body
+
+    console.log('📝 社交总结保存请求')
+
+    // Clear existing summary
+    await deleteData(TABLES.SOCIAL_SUMMARY)
+
+    // Insert new summary
+    if (summary) {
+      const record = {
+        id: `summary_${Date.now()}`,
+        content: summary,
+        updated_at: new Date().toISOString()
+      }
+      await insertData(TABLES.SOCIAL_SUMMARY, record)
+      console.log('✅ 总结已保存')
+    }
+
+    res.json({
+      success: true,
+      message: '总结已保存'
+    })
+  } catch (error) {
+    console.error('Social Summary POST Error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: '保存总结失败',
+      message: error.message
+    })
+  }
+})
+
 /**
  * GET /api/cad/history
  * Returns all historical analysis records (simple query, no vector search).
