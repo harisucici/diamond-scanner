@@ -2,8 +2,8 @@
   <div class="necklace-sales">
     <!-- 页面标题区 (左对齐 ANTI-CENTER BIAS) -->
     <header class="header">
-      <h1 class="header-title">配饰销量排行</h1>
-      <p class="header-subtitle">多平台配饰商品与价格；商品列表序号不代表销量</p>
+      <h1 class="header-title">配饰热门排行</h1>
+      <p class="header-subtitle">按平台原始名次计算相对热度，所选来源统一从高到低排序；不代表真实销量</p>
     </header>
 
     <!-- 控制栏 -->
@@ -160,7 +160,7 @@
           </div>
 
           <div class="rank-card-body">
-            <div class="rank-card-source">{{ item._source || item.website || item.platform }}</div>
+            <div class="rank-card-source"><span>{{ item._source || item.website || item.platform }}</span><span class="heat-score">相对热度 {{ formatHeat(item._heatScore) }}</span></div>
             <h3 class="rank-card-name">{{ item.productName || item.product_name }}</h3>
             <div class="rank-card-brand">{{ item.brand }}</div>
             <div class="rank-card-meta">
@@ -201,7 +201,7 @@
           </div>
 
           <div class="rank-row-body">
-            <div class="rank-row-source">{{ item._source || item.website || item.platform }}</div>
+            <div class="rank-row-source"><span>{{ item._source || item.website || item.platform }}</span><span class="heat-score">相对热度 {{ formatHeat(item._heatScore) }}</span></div>
             <h3 class="rank-row-name">{{ item.productName || item.product_name }}</h3>
             <div class="rank-row-brand">{{ item.brand }}</div>
           </div>
@@ -229,6 +229,7 @@
               <th class="col-source">网站</th>
               <th class="col-name">商品名称</th>
               <th class="col-brand">品牌</th>
+              <th class="col-heat">相对热度 ↓</th>
               <th class="col-price">价格</th>
               <th class="col-sales">销量</th>
             </tr>
@@ -244,12 +245,13 @@
               <td>
                 <span
                   class="rank-num"
-                  :class="{ 'rank-gold': item.rank <= 3 }"
-                >{{ item.rank }}</span>
+                  :class="{ 'rank-gold': idx < 3 }"
+                >{{ idx + 1 }}</span>
               </td>
               <td>{{ item._source || item.website || item.platform }}</td>
               <td>{{ item.productName || item.product_name }}</td>
               <td>{{ item.brand }}</td>
+              <td class="mono heat-score">{{ formatHeat(item._heatScore) }}</td>
               <td class="mono">
                 {{ formatPrice(item) }}
               </td>
@@ -273,6 +275,7 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
+import { sortByRelativeHeat } from '../services/relativeHeat.js'
 
 export default {
   name: 'NecklaceSales',
@@ -346,6 +349,8 @@ export default {
       if (num === undefined || num === null) return '0'
       return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
     }
+
+    const formatHeat = score => score == null ? '—' : score.toFixed(1)
 
     const formatPrice = (item) => {
       if (item.priceRange) return item.priceRange
@@ -495,13 +500,8 @@ export default {
           }
         }
 
-        // 计算排名
-        allData.forEach((item, i) => {
-          if (item.rank === undefined) item.rank = i + 1
-        })
-
         if (version !== loadVersion) return
-        data.value = allData
+        data.value = sortByRelativeHeat(allData)
 
         const totalRecords = allData.length
         const totalSales = allData.reduce((sum, item) => sum + (Number(item.sales) || 0), 0)
@@ -673,7 +673,7 @@ export default {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
       availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory,
       loadData, refreshMonth, openItemUrl,
-      allSources, visibleSources, enabledSources, toggleSource, formatPrice,
+      allSources, visibleSources, enabledSources, toggleSource, formatPrice, formatHeat,
       showDebug, debugLogs
     }
   }
@@ -1204,6 +1204,17 @@ export default {
 
 .rank-row-badge.rank-gold {
   color: #d4a574;
+}
+
+.rank-card-source, .rank-row-source {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.heat-score {
+  color: #d4a574;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 表格视图 */
