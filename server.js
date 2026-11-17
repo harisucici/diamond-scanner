@@ -9,10 +9,12 @@ import { dirname, join } from 'path'
 import fetch from 'node-fetch'
 import cron from 'node-cron'
 import yaml from 'js-yaml'
-import { initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, getDb, TABLES, countRows } from './db/lancedb.js'
+import { chromium } from 'playwright'
+import { getClient, initTables, getStats as getLanceDbStats, LANCEDB_DIR, queryData, insertData, deleteData, vectorSearch, getTable, getDb, TABLES, countRows } from './db/turso.js'
 import { generateEmbedding, cosineSimilarity } from './services/embeddingService.js'
 import { detectLanguage, getI18nText, i18n } from './services/langDetect.js'
 import lancedbRoutes from './routes/lancedbRoutes.js'
+import { createPublicCatalogRouter } from './routes/publicCatalogRoutes.js'
 // 加载统一配置
 import * as config from './config/index.js'
 
@@ -280,6 +282,145 @@ const fetchSaksData = async (category = 'jewelry') => {
   }
 }
 
+// KOMEHYO 数据获取 (日本二手奢侈品网站，使用 Playwright 渲染 JS)
+const fetchKomehyoData = async () => {
+  let browser
+  try {
+    const url = 'https://komehyo.jp/search/?dispNo=009001002'
+    browser = await chromium.launch({ headless: true })
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      locale: 'ja-JP',
+      timezoneId: 'Asia/Tokyo'
+    })
+    const page = await context.newPage()
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForSelector('a.p-link--card', { timeout: 15000 })
+
+    const rawProducts = await page.evaluate(() => {
+      const items = []
+      const cards = document.querySelectorAll('a.p-link--card')
+      cards.forEach((card) => {
+        const href = card.getAttribute('href') || ''
+        const fullUrl = href.startsWith('http') ? href : `https://komehyo.jp${href}`
+        const codeMatch = href.match(/\/product\/([^/]+)/)
+        const productCode = codeMatch ? codeMatch[1] : ''
+        const img = card.querySelector('img')
+        const imageUrl = img ? (img.getAttribute('data-src') || img.getAttribute('src')) : ''
+        const nameEl = card.querySelector('.p-link__txt--productsname')
+        const productName = nameEl ? nameEl.textContent.trim() : ''
+        const rankEl = card.querySelector('.p-link__txt--rank .p-link__txt--rating')
+        const condition = rankEl ? rankEl.textContent.trim() : ''
+        const priceEl = card.querySelector('.p-link__txt--price')
+        let price = 0
+        if (priceEl) {
+          const m = priceEl.textContent.match(/[¥￥]([0-9,]+)/)
+          if (m) price = parseInt(m[1].replace(/,/g, ''), 10)
+        }
+        if (productName && fullUrl) {
+          items.push({ productName, productCode, imageUrl, condition, price, url: fullUrl })
+        }
+      })
+      return items
+    })
+
+    const items = rawProducts.slice(0, 30).map((p, i) => ({
+      rank: i + 1,
+      productName: p.productName,
+      brand: 'OTHER',
+      price: p.price,
+      currency: 'JPY',
+      condition: p.condition,
+      imageUrl: p.imageUrl,
+      url: p.url
+    }))
+
+    console.log(`KOMEHYO: 获取${items.length}条数据 (Playwright)`)
+    return { items, source: 'komehyo-playwright' }
+  } catch (error) {
+    console.error('KOMEHYO爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  } finally {
+    if (browser) await browser.close()
+  }
+}
+
+// Rebag 数据获取 (Shopify 站点)
+const fetchRebagData = async () => {
+  try {
+    const items = []
+    let rank = 1
+
+    // Shopify products.json 支持分页，每次最多 250
+    const pages = [1, 2]
+    for (const page of pages) {
+      if (rank > 30) break
+      try {
+        const url = `https://shop.rebag.com/collections/jewelry/products.json?limit=50&page=${page}`
+        const response = await fetchWithRetry(url, {
+          headers: {
+            ...COMMON_HEADERS,
+            'Accept': 'application/json'
+          }
+        })
+        if (!response || !response.ok) {
+          console.log(`Rebag page ${page} HTTP ${response ? response.status : 'no response'}`)
+          continue
+        }
+        const data = await response.json()
+        const products = data.products || []
+        if (products.length === 0) break
+
+        for (const p of products) {
+          if (rank > 30) break
+          const variant = (p.variants && p.variants[0]) || {}
+          const price = parseFloat(variant.price || p.price || 0)
+          const imageUrl = (p.images && p.images[0] && p.images[0].src) || p.image || ''
+
+          // 从 title/vendor/tags 提取品牌
+          let brand = p.vendor || 'OTHER'
+          // Rebag 通常是 "Brand - Product Type" 格式
+          const titleParts = (p.title || '').split(' - ')
+          if (titleParts.length > 1 && brand === 'OTHER') {
+            brand = titleParts[0].trim() || 'OTHER'
+          }
+
+          // 成色 - 从 tags 或 options 提取
+          let condition = ''
+          if (p.tags) {
+            const tagArr = Array.isArray(p.tags) ? p.tags : p.tags.split(',').map(t => t.trim())
+            const condTag = tagArr.find(t => /^(N|LN|M|G|F)/i.test(t) || /condition/i.test(t))
+            if (condTag) condition = condTag
+          }
+
+          items.push({
+            rank: rank++,
+            productName: p.title || '',
+            brand,
+            price,
+            currency: 'USD',
+            condition,
+            imageUrl,
+            url: `https://shop.rebag.com/products/${p.handle}`,
+            productType: p.product_type || p.type || ''
+          })
+        }
+
+        // 如果本页不足 50，说明已取完
+        if (products.length < 50) break
+      } catch (e) {
+        console.log(`Rebag page ${page} error:`, e.message)
+      }
+    }
+
+    console.log(`Rebag: 获取${items.length}条数据`)
+    return { items, source: 'shopify-products-json' }
+  } catch (error) {
+    console.error('Rebag爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  }
+}
+
 const fetchFashionphileData = async (category = 'jewelry') => {
   try {
     const collectionMap = {
@@ -376,6 +517,284 @@ const fetchFashionphileData = async (category = 'jewelry') => {
     return { items, source: 'shopify-collections-api' }
   } catch (error) {
     console.error('Fashionphile爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  }
+}
+
+// Grailed 数据获取
+const fetchGrailedData = async (keywords = 'jewelry') => {
+  const url = `https://www.grailed.com/shop?query=${encodeURIComponent(keywords)}`
+  
+  console.log('Grailed: Attempting to scrape...')
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    let rank = 1
+    
+    // Try to extract product data from HTML
+    const productBlocks = html.match(/<a[^>]+href="\/listing\/[^"]+"[^>]*>([\s\S]*?)<\/a>/g) || []
+    
+    for (const block of productBlocks) {
+      if (rank > 30) break
+      
+      // Extract URL
+      const urlMatch = block.match(/href="([^"]+)"/)
+      const productUrl = urlMatch ? `https://www.grailed.com${urlMatch[1]}` : ''
+      
+      // Extract product name
+      const titleMatch = block.match(/<[^>]+title="([^"]+)"/) || block.match(/alt="([^"]+)"/)
+      const productName = titleMatch ? titleMatch[1].trim() : `Grailed ${keywords} ${rank}`
+      
+      // Extract designer/brand
+      const designerMatch = block.match(/data-designer="([^"]+)"/) || block.match(/class="[^"]*designer[^"]*"[^>]*>([^<]+)/)
+      const designer = designerMatch ? designerMatch[1].trim() : ''
+      
+      // Extract price
+      const priceMatch = block.match(/\$(\d+(?:,\d{3})*)/) || block.match(/data-price="(\d+)"/)
+      let price = 0
+      if (priceMatch) {
+        price = parseFloat(priceMatch[1].replace(/,/g, ''))
+      }
+      
+      // Extract image
+      const imgMatch = block.match(/src="([^"]+\.(?:jpg|png|webp)[^"]*)"/)
+      const imageUrl = imgMatch ? imgMatch[1] : ''
+      
+      // Extract condition
+      const conditionMatch = block.match(/class="[^"]*condition[^"]*"[^>]*>([^<]+)/)
+      const condition = conditionMatch ? conditionMatch[1].trim() : ''
+      
+      if (productUrl && productName) {
+        items.push({
+          rank: rank++,
+          productName,
+          brand: designer || 'OTHER',
+          designer: designer,
+          price,
+          currency: 'USD',
+          condition,
+          imageUrl,
+          url: productUrl
+        })
+      }
+    }
+    
+    // Fallback: Try JSON-LD
+    if (items.length < 10) {
+      const jsonData = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)
+      if (jsonData) {
+        for (const script of jsonData) {
+          const jsonMatch = script.match(/>([\s\S]*?)<\//)
+          if (jsonMatch) {
+            try {
+              const data = JSON.parse(jsonMatch[1])
+              if (Array.isArray(data)) {
+                for (const item of data) {
+                  if (rank > 30) break
+                  if (item['@type'] === 'Product') {
+                    items.push({
+                      rank: rank++,
+                      productName: item.name || `Grailed ${keywords} ${rank}`,
+                      brand: item.brand || 'OTHER',
+                      designer: item.brand || '',
+                      price: item.offers?.price || 0,
+                      currency: 'USD',
+                      condition: item.itemCondition || '',
+                      imageUrl: item.image || '',
+                      url: item.url || ''
+                    })
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    }
+    
+    console.log(`Grailed: 获取${items.length}条${keywords}数据`)
+    return { items, source: 'html-parse' }
+  } catch (error) {
+    console.error('Grailed爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  }
+}
+
+// Poshmark 数据获取 (反爬严格，降级处理)
+const fetchPoshmarkData = async (keywords = 'jewelry') => {
+  const url = `https://poshmark.com/search?query=${encodeURIComponent(keywords)}&type=listings&sort_by=added_desc`
+  
+  console.log('Poshmark: Attempting to scrape...')
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      },
+      redirect: 'follow'
+    })
+    
+    const html = await response.text()
+    const items = []
+    
+    // Check if blocked
+    if (response.status === 403 || response.status === 429 || html.includes('challenge') || html.includes('blocked')) {
+      console.warn('Poshmark: Blocked by anti-bot protection')
+      return { items: [], source: 'blocked', error: 'Anti-bot protection' }
+    }
+    
+    let rank = 1
+    
+    // Extract product cards
+    const productCards = html.match(/<div[^>]+class="[^"]*tile[^"]*"[^>]*>([\s\S]*?)<\/div>/g) || []
+    
+    for (const card of productCards) {
+      if (rank > 30) break
+      
+      const urlMatch = card.match(/href="\/listing\/(\d+)"/)
+      const listingId = urlMatch ? urlMatch[1] : ''
+      const productUrl = listingId ? `https://poshmark.com/listing/${listingId}` : ''
+      
+      const titleMatch = card.match(/alt="([^"]+)"/) || card.match(/<[^>]+class="[^"]*title[^"]*"[^>]*>([^<]+)/)
+      const productName = titleMatch ? titleMatch[1].trim() : `Poshmark ${keywords} ${rank}`
+      
+      const brandMatch = card.match(/data-brand="([^"]+)"/) || card.match(/class="[^"]*brand[^"]*"[^>]*>([^<]+)/)
+      const brand = brandMatch ? brandMatch[1].trim() : 'OTHER'
+      
+      const priceMatch = card.match(/\$(\d+(?:\.\d{2})?)/) || card.match(/data-price="(\d+(?:\.\d{2})?)"/)
+      const price = priceMatch ? parseFloat(priceMatch[1]) : 0
+      
+      const imgMatch = card.match(/src="([^"]+\.(?:jpg|png|webp)[^"]*)"/)
+      const imageUrl = imgMatch ? imgMatch[1] : ''
+      
+      const conditionMatch = card.match(/class="[^"]*condition[^"]*"[^>]*>([^<]+)/)
+      const condition = conditionMatch ? conditionMatch[1].trim() : ''
+      
+      if (productUrl) {
+        items.push({
+          rank: rank++,
+          productName,
+          brand,
+          price,
+          currency: 'USD',
+          condition,
+          imageUrl,
+          url: productUrl
+        })
+      }
+    }
+    
+    console.log(`Poshmark: 获取${items.length}条${keywords}数据`)
+    return { items, source: 'html-parse' }
+  } catch (error) {
+    console.error('Poshmark爬取失败:', error.message)
+    return { items: [], source: 'error', error: error.message }
+  }
+}
+
+// Mercari US 数据获取
+const fetchMercariUSData = async (keywords = 'jewelry') => {
+  const url = `https://www.mercari.com/search/?keyword=${encodeURIComponent(keywords)}`
+  
+  console.log('Mercari US: Attempting to scrape...')
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    })
+    
+    const html = await response.text()
+    const items = []
+    
+    // Check if blocked by Cloudflare
+    if (html.includes('Just a moment') || html.includes('challenge-platform')) {
+      console.warn('Mercari US: Blocked by Cloudflare')
+      return { items: [], source: 'blocked', error: 'Cloudflare protection' }
+    }
+    
+    let rank = 1
+    
+    // Try __NEXT_DATA__
+    const nextDataMatch = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
+    if (nextDataMatch) {
+      try {
+        const data = JSON.parse(nextDataMatch[1])
+        const searchResults = data?.props?.pageProps?.searchResults?.items || []
+        
+        for (const item of searchResults.slice(0, 30)) {
+          items.push({
+            rank: rank++,
+            productName: item.name || `Mercari ${keywords} ${rank}`,
+            brand: item.brand?.name || 'OTHER',
+            price: item.price || 0,
+            currency: 'USD',
+            condition: item.condition || '',
+            imageUrl: item.photos?.[0] || item.thumbnail || '',
+            url: `https://www.mercari.com/us/item/${item.id}/`
+          })
+        }
+      } catch (e) {
+        console.error('Mercari US: Failed to parse __NEXT_DATA__')
+      }
+    }
+    
+    // Fallback: Parse HTML
+    if (items.length === 0) {
+      const productCards = html.match(/<a[^>]+href="\/us\/item\/\d+[^"]*"[^>]*>([\s\S]*?)<\/a>/g) || []
+      
+      for (const card of productCards) {
+        if (rank > 30) break
+        
+        const urlMatch = card.match(/href="\/us\/item\/(\d+)/)
+        const itemId = urlMatch ? urlMatch[1] : ''
+        const productUrl = itemId ? `https://www.mercari.com/us/item/${itemId}/` : ''
+        
+        const titleMatch = card.match(/<[^>]+class="[^"]*title[^"]*"[^>]*>([^<]+)/)
+        const productName = titleMatch ? titleMatch[1].trim() : `Mercari ${keywords} ${rank}`
+        
+        const brandMatch = card.match(/<[^>]+class="[^"]*brand[^"]*"[^>]*>([^<]+)/)
+        const brand = brandMatch ? brandMatch[1].trim() : 'OTHER'
+        
+        const priceMatch = card.match(/\$(\d+(?:\.\d{2})?)/)
+        const price = priceMatch ? parseFloat(priceMatch[1]) : 0
+        
+        const imgMatch = card.match(/src="([^"]+\.(?:jpg|png|webp)[^"]*)"/)
+        const imageUrl = imgMatch ? imgMatch[1] : ''
+        
+        if (productUrl) {
+          items.push({
+            rank: rank++,
+            productName,
+            brand,
+            price,
+            currency: 'USD',
+            condition: '',
+            imageUrl,
+            url: productUrl
+          })
+        }
+      }
+    }
+    
+    console.log(`Mercari US: 获取${items.length}条${keywords}数据`)
+    return { items, source: 'html-parse' }
+  } catch (error) {
+    console.error('Mercari US爬取失败:', error.message)
     return { items: [], source: 'error', error: error.message }
   }
 }
@@ -499,6 +918,175 @@ const fetchEbayData = async (keywords = 'jewelry', limit = 50) => {
     return { items, source: 'ebay-rest-api', total: data.total || 0 }
   } catch (error) {
     console.error('❌ eBay API 获取失败:', error.message)
+    return { items: [], error: error.message }
+  }
+}
+
+// Vestiaire Collective 数据抓取
+const fetchVestiaireData = async (category = 'jewelry') => {
+  try {
+    const categoryUrls = {
+      'jewelry': 'https://www.vestiairecollective.com/women-jewelry/',
+      'necklaces': 'https://www.vestiairecollective.com/women-jewelry/necklace/',
+      'rings': 'https://www.vestiairecollective.com/women-jewelry/ring/',
+      'bracelets': 'https://www.vestiairecollective.com/women-jewelry/bracelet/',
+      'earrings': 'https://www.vestiairecollective.com/women-jewelry/earrings/'
+    }
+    const url = categoryUrls[category] || categoryUrls['jewelry']
+    const proxyAgent = await getProxyAgent()
+    const response = await fetch(url, {
+      headers: {
+        ...COMMON_HEADERS,
+        'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      agent: proxyAgent
+    })
+    const html = await response.text()
+    const items = []
+    let rank = 1
+
+    // Check for Cloudflare block
+    if (html.includes('Just a moment') || html.includes('challenge-platform') || html.includes('Cloudflare')) {
+      console.warn('⚠️  Vestiaire Collective: Blocked by Cloudflare anti-bot protection')
+      return { items: [], source: 'blocked', error: 'Cloudflare protection - site requires real browser' }
+    }
+
+    // Parse JSON-LD or window.__PRELOADED_STATE__
+    const stateMatch = html.match(/window\.__PRELOADED_STATE__\s*=\s*({.*?});\s*<\/script>/s) ||
+                       html.match(/window\.__NEXT_DATA__\s*=\s*({.*?});\s*<\/script>/s)
+    if (stateMatch) {
+      try {
+        const state = JSON.parse(stateMatch[1])
+        const products = state.catalog?.products || state.products || []
+        for (const p of products) {
+          if (rank > 30) break
+          items.push({
+            rank: rank++,
+            productName: p.name || p.title || '',
+            brand: (p.brand?.name || p.brand || 'OTHER').toUpperCase(),
+            price: parseFloat(p.price?.cents ? p.price.cents / 100 : (p.price || 0)),
+            currency: (p.price?.currency || 'EUR').toUpperCase(),
+            condition: p.condition || p.conditionLabel || '',
+            imageUrl: p.picture?.full || p.picture?.url || p.images?.[0]?.url || '',
+            url: p.url ? `https://www.vestiairecollective${p.url.startsWith('/') ? '' : '/'}${p.url}` : ''
+          })
+        }
+      } catch (e) {
+        console.log('Vestiaire state parse failed:', e.message)
+      }
+    }
+
+    // Fallback: regex
+    if (items.length === 0) {
+      const productPattern = /<a[^>]+href="(\/[^"]*-id\d+\.shtml)"[^>]*>([\s\S]*?)<\/a>/g
+      let match
+      while ((match = productPattern.exec(html)) !== null && rank <= 30) {
+        const path = match[1]
+        const block = match[2]
+        const nameMatch = block.match(/alt="([^"]+)"/)
+        const priceMatch = block.match(/data-price="([^"]+)"|class="[^"]*price[^"]*"[^>]*>([^<]*)</)
+        const imgMatch = block.match(/src="([^"]+)"/)
+        const brandMatch = block.match(/class="[^"]*brand[^"]*"[^>]*>([^<]*)</)
+        const condMatch = block.match(/class="[^"]*condition[^"]*"[^>]*>([^<]*)</)
+        const priceText = priceMatch ? (priceMatch[1] || priceMatch[2] || '') : ''
+        const price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
+        items.push({
+          rank: rank++,
+          productName: nameMatch ? nameMatch[1].trim() : `Item ${rank - 1}`,
+          brand: brandMatch ? brandMatch[1].trim().toUpperCase() : 'OTHER',
+          price,
+          currency: 'EUR',
+          condition: condMatch ? condMatch[1].trim() : '',
+          imageUrl: imgMatch ? imgMatch[1] : '',
+          url: `https://www.vestiairecollective.com${path}`
+        })
+      }
+    }
+
+    console.log(`✅ Vestiaire Collective: 获取 ${items.length} 条数据`)
+    return { items, source: 'vestiaire-collective' }
+  } catch (error) {
+    console.error('❌ Vestiaire Collective 爬取失败:', error.message)
+    return { items: [], error: error.message }
+  }
+}
+
+// Chrono24 数据抓取
+const fetchChrono24Data = async (category = 'jewelry') => {
+  try {
+    const url = 'https://www.chrono24.com/jewelry/index.htm'
+    const response = await fetch(url, {
+      headers: {
+        ...COMMON_HEADERS,
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    })
+    const html = await response.text()
+    const items = []
+    let rank = 1
+
+    // Check for Cloudflare block
+    if (html.includes('challenge-platform') || html.includes('Cloudflare') || html.includes('Checking your browser')) {
+      console.warn('⚠️  Chrono24: Blocked by Cloudflare anti-bot protection')
+      return { items: [], source: 'blocked', error: 'Cloudflare protection - site requires real browser' }
+    }
+
+    // 解析 JSON-LD
+    const ldMatches = [...html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)]
+    for (const m of ldMatches) {
+      try {
+        const data = JSON.parse(m[1])
+        const products = Array.isArray(data) ? data : (data['@graph'] || (data['@type'] === 'Product' ? [data] : []))
+        for (const p of products) {
+          if (p['@type'] === 'Product' && rank <= 30) {
+            items.push({
+              rank: rank++,
+              productName: p.name || '',
+              brand: (p.brand?.name || p.brand || 'OTHER').toUpperCase(),
+              price: parseFloat(p.offers?.price || p.offers?.lowPrice || 0),
+              currency: (p.offers?.priceCurrency || 'USD').toUpperCase(),
+              condition: p.additionalProperty?.find?.(x => x.name === 'condition')?.value || '',
+              imageUrl: p.image?.[0] || p.image || '',
+              url: p.url || ''
+            })
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Fallback: regex
+    if (items.length === 0) {
+      const articlePattern = /<article[^>]+class="[^"]*product[^"]*"[^>]*>([\s\S]*?)<\/article>/g
+      let match
+      while ((match = articlePattern.exec(html)) !== null && rank <= 30) {
+        const block = match[1]
+        const nameMatch = block.match(/<a[^>]+title="([^"]+)"/) || block.match(/class="[^"]*product-name[^"]*"[^>]*>([^<]*)</)
+        const brandMatch = block.match(/data-brand="([^"]+)"|class="[^"]*brand[^"]*"[^>]*>([^<]*)</)
+        const priceMatch = block.match(/data-price="([^"]+)"|class="[^"]*price[^"]*"[^>]*>([^<]*)</)
+        const imgMatch = block.match(/src="([^"]+)"/)
+        const linkMatch = block.match(/href="([^"]+)"/)
+        const condMatch = block.match(/class="[^"]*condition[^"]*"[^>]*>([^<]*)</)
+        const priceText = priceMatch ? (priceMatch[1] || priceMatch[2] || '') : ''
+        const price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
+        items.push({
+          rank: rank++,
+          productName: nameMatch ? nameMatch[1].trim() : `Item ${rank - 1}`,
+          brand: brandMatch ? (brandMatch[1] || brandMatch[2] || 'OTHER').trim().toUpperCase() : 'OTHER',
+          price,
+          currency: 'USD',
+          condition: condMatch ? condMatch[1].trim() : '',
+          imageUrl: imgMatch ? imgMatch[1] : '',
+          url: linkMatch && linkMatch[1].startsWith('/') ? `https://www.chrono24.com${linkMatch[1]}` : (linkMatch?.[1] || '')
+        })
+      }
+    }
+
+    console.log(`✅ Chrono24: 获取 ${items.length} 条数据`)
+    return { items, source: 'chrono24' }
+  } catch (error) {
+    console.error('❌ Chrono24 爬取失败:', error.message)
     return { items: [], error: error.message }
   }
 }
@@ -725,6 +1313,12 @@ app.get('/api/test', (req, res) => {
   })
 })
 
+// Report configuration readiness without exposing credentials.
+app.get('/api/sources/availability', (req, res) => {
+  const ebayAvailable = Boolean(config.ebay.appId?.trim() && config.ebay.certId?.trim())
+  res.json({ ebay: { available: ebayAvailable, reason: ebayAvailable ? null : '未配置 eBay OAuth 凭证' } })
+})
+
 app.get('/api/sources/status', async (req, res) => {
   const sources = [
     { id: 'buyma', name: 'BUYMA', table: 'necklaces' },
@@ -852,9 +1446,11 @@ app.post('/api/saks/refresh/:month', async (req, res) => {
   const { month } = req.params
   
   try {
-    await deleteData('saks_products', { month })
-    
     const result = await fetchSaksData()
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('saks_products', { month })
     const now = new Date().toISOString()
     
     const items = result.items.map(item => ({
@@ -923,9 +1519,11 @@ app.post('/api/fashionphile/refresh/:month', async (req, res) => {
   const { category } = req.query
   
   try {
-    await deleteData('fashionphile_products', { month })
-    
     const result = await fetchFashionphileData(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('fashionphile_products', { month })
     const now = new Date().toISOString()
     
     const items = result.items.map(item => ({
@@ -1002,9 +1600,11 @@ app.post('/api/ebay/refresh/:month', async (req, res) => {
   const { category } = req.query
   
   try {
-    await deleteData('ebay_products', { month })
-    
     const result = await fetchEbayData(category || 'jewelry', 50)
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('ebay_products', { month })
     const now = new Date().toISOString()
     
     const items = result.items.map(item => ({
@@ -1035,6 +1635,560 @@ app.post('/api/ebay/refresh/:month', async (req, res) => {
       month, 
       platform: 'eBay',
       items: items  // 返回数据库中的完整数据
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// KOMEHYO 路由
+app.get('/api/komehyo', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('komehyo_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/komehyo/months', async (req, res) => {
+  try {
+    const results = await queryData('komehyo_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/komehyo/brands', async (req, res) => {
+  try {
+    const results = await queryData('komehyo_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/komehyo/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  
+  try {
+    const result = await fetchKomehyoData()
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('komehyo_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-komehyo-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'JPY',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('komehyo_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'KOMEHYO',
+      source: result.source,
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Rebag 路由
+app.get('/api/rebag', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('rebag_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/rebag/months', async (req, res) => {
+  try {
+    const results = await queryData('rebag_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/rebag/brands', async (req, res) => {
+  try {
+    const results = await queryData('rebag_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/rebag/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  
+  try {
+    const result = await fetchRebagData()
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('rebag_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-rebag-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'USD',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('rebag_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Rebag',
+      source: result.source,
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Vestiaire Collective 路由
+app.get('/api/vestiaire', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('vestiaire_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/vestiaire/months', async (req, res) => {
+  try {
+    const results = await queryData('vestiaire_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/vestiaire/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const result = await fetchVestiaireData(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('vestiaire_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-vestiaire-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'EUR',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('vestiaire_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Vestiaire Collective',
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Chrono24 路由
+app.get('/api/chrono24', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('chrono24_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/chrono24/months', async (req, res) => {
+  try {
+    const results = await queryData('chrono24_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/chrono24/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const result = await fetchChrono24Data(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('chrono24_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-chrono24-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'USD',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('chrono24_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Chrono24',
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ==================== Grailed API Routes ====================
+
+app.get('/api/grailed', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('grailed_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    // Sort by rank
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/grailed/months', async (req, res) => {
+  try {
+    const results = await queryData('grailed_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/grailed/brands', async (req, res) => {
+  try {
+    const results = await queryData('grailed_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/grailed/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const result = await fetchGrailedData(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('grailed_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-grailed-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      designer: item.designer || '',
+      price: item.price,
+      currency: item.currency || 'USD',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('grailed_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Grailed',
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ==================== Poshmark API Routes ====================
+
+app.get('/api/poshmark', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('poshmark_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    // Sort by rank
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/poshmark/months', async (req, res) => {
+  try {
+    const results = await queryData('poshmark_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/poshmark/brands', async (req, res) => {
+  try {
+    const results = await queryData('poshmark_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/poshmark/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const result = await fetchPoshmarkData(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('poshmark_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-poshmark-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'USD',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('poshmark_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'Poshmark',
+      items: items
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ==================== Mercari US API Routes ====================
+
+app.get('/api/mercarius', async (req, res) => {
+  const { month, brand, limit } = req.query
+  const tableMonth = month || new Date().toISOString().slice(0, 7)
+  
+  try {
+    let items = await queryData('mercarius_products', `month = '${tableMonth}'`, limit ? parseInt(limit) : 500)
+    
+    if (brand) {
+      items = items.filter(item => item.brand === brand)
+    }
+    
+    // Sort by rank
+    items.sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    res.json(items)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/mercarius/months', async (req, res) => {
+  try {
+    const results = await queryData('mercarius_products', null, 1000)
+    const months = [...new Set(results.map(r => r.month).filter(Boolean))].sort().reverse()
+    res.json(months)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.get('/api/mercarius/brands', async (req, res) => {
+  try {
+    const results = await queryData('mercarius_products', null, 1000)
+    const brands = [...new Set(results.map(r => r.brand).filter(Boolean))].sort()
+    res.json(brands)
+  } catch (error) {
+    res.json([])
+  }
+})
+
+app.post('/api/mercarius/refresh/:month', async (req, res) => {
+  const { month } = req.params
+  const { category } = req.query
+  
+  try {
+    const result = await fetchMercariUSData(category || 'jewelry')
+    if (!result.items?.length) {
+      return res.status(502).json({ success: false, preserved: true, error: result.error || '未获取到商品，已有数据已保留' })
+    }
+    await deleteData('mercarius_products', { month })
+    const now = new Date().toISOString()
+    
+    const items = result.items.map(item => ({
+      id: `${month}-mercarius-${item.rank}`,
+      rank: item.rank,
+      month,
+      productName: item.productName,
+      brand: item.brand,
+      price: item.price,
+      currency: item.currency || 'USD',
+      condition: item.condition,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      created_at: now
+    }))
+    
+    if (items.length > 0) {
+      await insertData('mercarius_products', items)
+    }
+    
+    res.json({ 
+      success: true, 
+      count: result.items.length, 
+      month, 
+      platform: 'MercariUS',
+      items: items
     })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -2195,6 +3349,8 @@ app.post('/api/chat', handleChatWithProducts)
 
 // LanceDB 向量搜索 API 路由
 app.use('/api/lancedb', lancedbRoutes)
+app.use('/api/allu', createPublicCatalogRouter('allu', { getClient }))
+app.use('/api/mejuri', createPublicCatalogRouter('mejuri', { getClient }))
 console.log('LanceDB API 路由已注册')
 
 console.log('=== Initializing LanceDB ===')

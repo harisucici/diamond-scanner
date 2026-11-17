@@ -3,7 +3,7 @@
     <!-- 页面标题区 (左对齐 ANTI-CENTER BIAS) -->
     <header class="header">
       <h1 class="header-title">配饰销量排行</h1>
-      <p class="header-subtitle">日本各大购物平台配饰销量 TOP 排名</p>
+      <p class="header-subtitle">多平台配饰商品与价格；ALLU、Mejuri 序号为列表顺序，不代表销量</p>
     </header>
 
     <!-- 控制栏 -->
@@ -54,7 +54,7 @@
       <div class="source-bar-title">数据源</div>
       <div class="source-list">
         <button
-          v-for="s in allSources"
+          v-for="s in visibleSources"
           :key="s.id"
           :class="['source-chip', s.enabled ? 'enabled' : 'disabled']"
           @click="toggleSource(s.id)"
@@ -73,7 +73,7 @@
       </div>
       <div class="stat-card">
         <div class="stat-value">{{ formatNumber(stats.totalSales) }}</div>
-        <div class="stat-label">总销量</div>
+        <div class="stat-label">已记录销量</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">{{ Object.keys(stats.byWebsite).length || enabledSources.length }}</div>
@@ -165,15 +165,12 @@
             <div class="rank-card-brand">{{ item.brand }}</div>
             <div class="rank-card-meta">
               <span class="rank-card-price">
-                <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
-                  ${{ formatNumber(item.price) }}
-                </template>
-                <template v-else>{{ item.priceRange || '¥' + formatNumber(item.price) }}</template>
+                {{ formatPrice(item) }}
               </span>
               <span class="rank-card-sales">
                 <template v-if="item._source === 'Fashionphile'">—</template>
                 <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
-                <template v-else>{{ formatNumber(item.sales) }}</template>
+                <template v-else>{{ item.sales == null ? '—' : formatNumber(item.sales) }}</template>
               </span>
             </div>
           </div>
@@ -217,15 +214,12 @@
 
           <div class="rank-row-stats">
             <div class="rank-row-price">
-              <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
-                ${{ formatNumber(item.price) }}
-              </template>
-              <template v-else>{{ item.priceRange || '¥' + formatNumber(item.price) }}</template>
+              {{ formatPrice(item) }}
             </div>
             <div class="rank-row-sales">
               <template v-if="item._source === 'Fashionphile'">—</template>
               <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
-              <template v-else>{{ formatNumber(item.sales) }}</template>
+              <template v-else>{{ item.sales == null ? '—' : formatNumber(item.sales) }}</template>
             </div>
           </div>
 
@@ -269,15 +263,12 @@
               <td>{{ item.productName || item.product_name }}</td>
               <td>{{ item.brand }}</td>
               <td class="mono">
-                <template v-if="item._source === 'Fashionphile' || item._source === 'eBay'">
-                  ${{ formatNumber(item.price) }}
-                </template>
-                <template v-else>{{ item.priceRange || formatNumber(item.price) }}</template>
+                {{ formatPrice(item) }}
               </td>
               <td class="mono">
                 <template v-if="item._source === 'Fashionphile'">—</template>
                 <template v-else-if="item._source === 'eBay'">{{ item.condition || '—' }}</template>
-                <template v-else>{{ formatNumber(item.sales) }}</template>
+                <template v-else>{{ item.sales == null ? '—' : formatNumber(item.sales) }}</template>
               </td>
             </tr>
           </tbody>
@@ -314,23 +305,37 @@ export default {
     const allSources = ref([
       { id: 'buyma', name: 'BUYMA', enabled: true, api: '/api/necklaces' },
       { id: 'fashionphile', name: 'Fashionphile', enabled: true, api: '/api/fashionphile' },
-      { id: 'ebay', name: 'eBay', enabled: true, api: '/api/ebay' }
+      { id: 'ebay', name: 'eBay', available: false, enabled: false, api: '/api/ebay' },
+      { id: 'allu', name: 'ALLU', enabled: true, api: '/api/allu' },
+      { id: 'mejuri', name: 'Mejuri', enabled: true, api: '/api/mejuri' },
+      { id: 'komehyo', name: 'KOMEHYO', available: false, enabled: false, api: '/api/komehyo' },
+      { id: 'rebag', name: 'Rebag', available: false, enabled: false, api: '/api/rebag' },
+      { id: 'vestiaire', name: 'Vestiaire Collective', available: false, enabled: false, api: '/api/vestiaire' },
+      { id: 'chrono24', name: 'Chrono24', available: false, enabled: false, api: '/api/chrono24' },
+      { id: 'grailed', name: 'Grailed', available: false, enabled: false, api: '/api/grailed' },
+      { id: 'poshmark', name: 'Poshmark', available: false, enabled: false, api: '/api/poshmark' },
+      { id: 'mercarius', name: 'Mercari US', available: false, enabled: false, api: '/api/mercarius' }
     ])
 
-    const enabledSources = computed(() => allSources.value.filter(s => s.enabled))
+    // Unavailable sources remain configured so they can be restored later.
+    const visibleSources = computed(() => allSources.value.filter(s => s.available !== false))
+    const enabledSources = computed(() => visibleSources.value.filter(s => s.enabled))
+
+    // 使用 price 作为 sales 替代的数据源列表
+    const priceBasedSources = ['Fashionphile', 'eBay', 'KOMEHYO', 'Rebag', 'Vestiaire Collective', 'Chrono24', 'Grailed', 'Poshmark', 'MercariUS', 'ALLU', 'Mejuri']
 
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
       return Math.max(...data.value.map(item => {
-        if (item._source === 'Fashionphile' || item._source === 'eBay') {
+        if (priceBasedSources.includes(item._source)) {
           return item.price || 0
         }
         return item.sales || 0
       }))
     })
 
-    const minMonth = computed(() => availableMonths.value[0] || '2024-01')
-    const maxMonth = computed(() => availableMonths.value[availableMonths.value.length - 1] || '2026-12')
+    const minMonth = computed(() => availableMonths.value[availableMonths.value.length - 1] || '2024-01')
+    const maxMonth = computed(() => new Date().toISOString().slice(0, 7))
 
     const filteredData = computed(() => {
       if (!searchKeyword.value) return data.value || []
@@ -350,6 +355,12 @@ export default {
     const formatNumber = (num) => {
       if (num === undefined || num === null) return '0'
       return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    }
+
+    const formatPrice = (item) => {
+      if (item.priceRange) return item.priceRange
+      const currency = item.currency || (['Fashionphile', 'eBay'].includes(item._source) ? 'USD' : 'JPY')
+      return `${currency} ${formatNumber(item.price)}`
     }
 
     const formatCategory = (cat) => {
@@ -374,7 +385,9 @@ export default {
       }
     }
 
+    let loadVersion = 0
     const loadData = async () => {
+      const version = ++loadVersion
       loading.value = true
       try {
         if (!selectedMonth.value || selectedMonth.value.trim() === '') {
@@ -382,36 +395,9 @@ export default {
         }
 
         await loadCategories()
+        if (version !== loadVersion) return
 
         const allData = []
-
-        // 优先尝试 /api/lancedb/query
-        try {
-          const lancedbRes = await fetch('/api/lancedb/query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ month: selectedMonth.value, limit: 50 })
-          })
-          if (lancedbRes.ok) {
-            const lancedbData = await lancedbRes.json()
-            if (Array.isArray(lancedbData) || Array.isArray(lancedbData?.data)) {
-              const items = Array.isArray(lancedbData) ? lancedbData : lancedbData.data
-              items.forEach((item, i) => {
-                allData.push({
-                  ...item,
-                  id: item.id || `lancedb-${i}`,
-                  rank: item.rank || i + 1,
-                  _source: item.platform || 'LanceDB',
-                  productName: item.productName || item.product_name,
-                  image: item.image || item.image_url || item.imageUrl,
-                  url: item.url
-                })
-              })
-            }
-          }
-        } catch (e) {
-          // 兜底到原有数据源
-        }
 
         // 原有数据源
         if (allData.length === 0) {
@@ -429,10 +415,12 @@ export default {
               }
 
               const response = await fetch(url)
+              if (!response.ok) throw new Error(`HTTP ${response.status}`)
               const items = await response.json()
+              if (!Array.isArray(items)) throw new Error('商品列表格式错误')
 
               items.forEach((item, i) => {
-                const normalizedItem = { ...item, _source: source.name }
+                const normalizedItem = { ...item, _source: source.name, image: item.image || item.imageUrl || item.image_url }
 
                 if (source.id === 'fashionphile') {
                   normalizedItem.productName = item.productName
@@ -450,6 +438,63 @@ export default {
                   normalizedItem.image = item.imageUrl
                   normalizedItem.condition = item.condition
                   normalizedItem.seller = item.seller
+                } else if (source.id === 'vestiaire') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'EUR'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'chrono24') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'komehyo') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || 'OTHER'
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'JPY'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'rebag') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || 'OTHER'
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'grailed') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || item.designer || 'OTHER'
+                  normalizedItem.designer = item.designer
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'poshmark') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || 'OTHER'
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
+                } else if (source.id === 'mercarius') {
+                  normalizedItem.productName = item.productName
+                  normalizedItem.brand = item.brand || 'OTHER'
+                  normalizedItem.price = item.price
+                  normalizedItem.currency = item.currency || 'USD'
+                  normalizedItem.url = item.url
+                  normalizedItem.image = item.imageUrl
+                  normalizedItem.condition = item.condition
                 }
 
                 allData.push(normalizedItem)
@@ -465,55 +510,42 @@ export default {
           if (item.rank === undefined) item.rank = i + 1
         })
 
+        if (version !== loadVersion) return
         data.value = allData
 
         const totalRecords = allData.length
-        const totalSales = allData.reduce((sum, item) => {
-          if (item._source === 'Fashionphile' || item._source === 'eBay') {
-            return sum + (item.price || 0)
-          }
-          return sum + (item.sales || 0)
-        }, 0)
-        stats.value = { totalRecords, totalSales, byWebsite: {}, byCategory: {} }
+        const totalSales = allData.reduce((sum, item) => sum + (Number(item.sales) || 0), 0)
+        stats.value = { totalRecords, totalSales, byWebsite: Object.fromEntries([...new Set(allData.map(item => item._source))].map(name => [name, true])), byCategory: {} }
       } catch (error) {
         console.error('加载数据失败:', error)
       } finally {
-        loading.value = false
+        if (version === loadVersion) loading.value = false
       }
     }
 
     const loadMonths = async () => {
-      const allMonths = new Set()
       try {
-        const response = await fetch('/api/necklaces/months')
-        const months = await response.json()
-        months.forEach(m => allMonths.add(m))
+        const response = await fetch('/api/sources/availability')
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const availability = await response.json()
+        const ebay = allSources.value.find(source => source.id === 'ebay')
+        ebay.available = availability.ebay?.available === true
+        ebay.enabled = ebay.available
       } catch (error) {
-        console.error('加载BUYMA月份失败:', error)
+        console.warn('加载数据源可用状态失败，保留 eBay 为停用状态:', error)
       }
-      try {
-        const response = await fetch('/api/fashionphile/months')
-        const months = await response.json()
-        months.forEach(m => allMonths.add(m))
-      } catch (error) {
-        console.error('加载Fashionphile月份失败:', error)
-      }
-      try {
-        const response = await fetch('/api/ebay/months')
-        const months = await response.json()
-        months.forEach(m => allMonths.add(m))
-      } catch (error) {
-        console.error('加载eBay月份失败:', error)
-      }
-
-      availableMonths.value = Array.from(allMonths)
-        .filter(m => m && m.trim() !== '')
-        .sort()
-        .reverse()
-
       const currentMonth = new Date().toISOString().slice(0, 7)
-      selectedMonth.value = availableMonths.value[0] || currentMonth
-
+      const allMonths = new Set([currentMonth])
+      await Promise.all(enabledSources.value.map(async source => {
+        try {
+          const response = await fetch(`${source.api}/months`)
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const months = await response.json()
+          if (Array.isArray(months)) months.filter(Boolean).forEach(month => allMonths.add(month))
+        } catch (error) { console.warn(`加载 ${source.name} 月份失败:`, error) }
+      }))
+      availableMonths.value = [...allMonths].sort().reverse()
+      selectedMonth.value = currentMonth
       await loadData()
     }
 
@@ -541,7 +573,7 @@ export default {
 
             debugLogs.value.push({
               name: source.name,
-              success: result.success,
+              success: response.ok && result.success === true,
               count: result.count || 0,
               error: result.error || null,
               duration,
@@ -550,7 +582,7 @@ export default {
 
             if (result.items && result.items.length > 0) {
               result.items.forEach(item => {
-                const normalized = { ...item, _source: source.name }
+                const normalized = { ...item, _source: source.name, image: item.image || item.imageUrl || item.image_url }
                 if (source.id === 'fashionphile') {
                   normalized.productName = item.productName
                   normalized.brand = item.brand
@@ -567,6 +599,47 @@ export default {
                   normalized.image = item.imageUrl
                   normalized.condition = item.condition
                   normalized.seller = item.seller
+                } else if (source.id === 'komehyo') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || 'OTHER'
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'JPY'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
+                } else if (source.id === 'rebag') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || 'OTHER'
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
+                } else if (source.id === 'grailed') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || item.designer || 'OTHER'
+                  normalized.designer = item.designer
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
+                } else if (source.id === 'poshmark') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || 'OTHER'
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
+                } else if (source.id === 'mercarius') {
+                  normalized.productName = item.productName
+                  normalized.brand = item.brand || 'OTHER'
+                  normalized.price = item.price
+                  normalized.currency = item.currency || 'USD'
+                  normalized.url = item.url
+                  normalized.image = item.imageUrl
+                  normalized.condition = item.condition
                 }
                 refreshedData.push(normalized)
               })
@@ -583,21 +656,10 @@ export default {
           }
         }
 
-        if (refreshedData.length > 0) {
-          refreshedData.forEach((item, i) => { if (item.rank === undefined) item.rank = i + 1 })
-          data.value = refreshedData
+        // Reload persisted snapshots, including retained data for sources that failed.
+        await loadData()
+        showDebug.value = true
 
-          const totalRecords = refreshedData.length
-          const totalSales = refreshedData.reduce((sum, item) => {
-            if (item._source === 'Fashionphile' || item._source === 'eBay') {
-              return sum + (item.price || 0)
-            }
-            return sum + (item.sales || 0)
-          }, 0)
-          stats.value = { totalRecords, totalSales, byWebsite: {}, byCategory: {} }
-        }
-
-        await loadCategories()
       } catch (error) {
         console.error('刷新数据失败:', error)
       } finally {
@@ -611,7 +673,7 @@ export default {
 
     const toggleSource = (sourceId) => {
       const source = allSources.value.find(s => s.id === sourceId)
-      if (source) {
+      if (source && source.available !== false) {
         source.enabled = !source.enabled
         loadData()
       }
@@ -621,7 +683,7 @@ export default {
       loading, refreshing, viewMode, selectedMonth, selectedCategory, searchKeyword, data, stats,
       availableMonths, categories, maxSales, minMonth, maxMonth, filteredData, formatMonth, formatNumber, formatCategory,
       loadData, refreshMonth, openItemUrl,
-      allSources, enabledSources, toggleSource,
+      allSources, visibleSources, enabledSources, toggleSource, formatPrice,
       showDebug, debugLogs
     }
   }
