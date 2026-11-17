@@ -43,6 +43,9 @@ export const TABLES = {
 
   ALLU_PRODUCTS: 'allu_products',
   MEJURI_PRODUCTS: 'mejuri_products',
+  SOCIAL_TIKTOK: 'social_tiktok',
+  SOCIAL_INSTAGRAM: 'social_instagram',
+  SOCIAL_SUMMARY: 'social_summary',
 
   // CAD 学习表
   CAD_LEARNING: 'cad_learning'
@@ -562,6 +565,16 @@ const TABLE_SCHEMAS = {
   `
 }
 
+// Keep the social routes from the upstream update compatible with Turso.
+for (const table of [TABLES.SOCIAL_TIKTOK, TABLES.SOCIAL_INSTAGRAM]) {
+  TABLE_SCHEMAS[table] = `CREATE TABLE IF NOT EXISTS ${table} (
+    id TEXT PRIMARY KEY, author TEXT, url TEXT, platform TEXT, addedAt TEXT
+  )`
+}
+TABLE_SCHEMAS[TABLES.SOCIAL_SUMMARY] = `CREATE TABLE IF NOT EXISTS social_summary (
+  id TEXT PRIMARY KEY, content TEXT, updated_at TEXT
+)`
+
 // Public catalogs share the same snapshot fields; existing platform tables remain intact.
 for (const table of [TABLES.ALLU_PRODUCTS, TABLES.MEJURI_PRODUCTS]) {
   TABLE_SCHEMAS[table] = `CREATE TABLE IF NOT EXISTS ${table} (
@@ -762,6 +775,12 @@ export const insertData = async (tableName, data) => {
  */
 export const deleteData = async (tableName, filter) => {
   const db = getClient()
+  if (filter == null) {
+    const socialTables = [TABLES.SOCIAL_TIKTOK, TABLES.SOCIAL_INSTAGRAM, TABLES.SOCIAL_SUMMARY]
+    if (!socialTables.includes(tableName)) throw new Error('删除商品数据需要指定条件')
+    await db.execute(`DELETE FROM ${tableName}`)
+    return
+  }
   
   let filterStr = filter
   const args = []
