@@ -3351,6 +3351,8 @@ app.post('/api/chat', handleChatWithProducts)
 app.use('/api/lancedb', lancedbRoutes)
 app.use('/api/allu', createPublicCatalogRouter('allu', { getClient }))
 app.use('/api/mejuri', createPublicCatalogRouter('mejuri', { getClient }))
+app.use('/api/rodeo', createPublicCatalogRouter('rodeo', { getClient }))
+app.use('/api/watchnian', createPublicCatalogRouter('watchnian', { getClient }))
 console.log('LanceDB API 路由已注册')
 
 console.log('=== Initializing LanceDB ===')

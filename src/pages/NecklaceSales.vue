@@ -3,7 +3,7 @@
     <!-- 页面标题区 (左对齐 ANTI-CENTER BIAS) -->
     <header class="header">
       <h1 class="header-title">配饰销量排行</h1>
-      <p class="header-subtitle">多平台配饰商品与价格；ALLU、Mejuri 序号为列表顺序，不代表销量</p>
+      <p class="header-subtitle">多平台配饰商品与价格；商品列表序号不代表销量</p>
     </header>
 
     <!-- 控制栏 -->
@@ -175,12 +175,6 @@
             </div>
           </div>
 
-          <div
-            class="rank-card-badge"
-            :class="{ 'rank-gold': item.rank <= 3 }"
-          >
-            {{ item.rank }}
-          </div>
         </div>
       </div>
 
@@ -223,12 +217,6 @@
             </div>
           </div>
 
-          <div
-            class="rank-row-badge"
-            :class="{ 'rank-gold': item.rank <= 3 }"
-          >
-            {{ item.rank }}
-          </div>
         </div>
       </div>
 
@@ -308,6 +296,8 @@ export default {
       { id: 'ebay', name: 'eBay', available: false, enabled: false, api: '/api/ebay' },
       { id: 'allu', name: 'ALLU', enabled: true, api: '/api/allu' },
       { id: 'mejuri', name: 'Mejuri', enabled: true, api: '/api/mejuri' },
+      { id: 'rodeo', name: 'Rodeo Drive', enabled: true, api: '/api/rodeo' },
+      { id: 'watchnian', name: 'WATCHNIAN', enabled: true, api: '/api/watchnian' },
       { id: 'komehyo', name: 'KOMEHYO', available: false, enabled: false, api: '/api/komehyo' },
       { id: 'rebag', name: 'Rebag', available: false, enabled: false, api: '/api/rebag' },
       { id: 'vestiaire', name: 'Vestiaire Collective', available: false, enabled: false, api: '/api/vestiaire' },
@@ -322,7 +312,7 @@ export default {
     const enabledSources = computed(() => visibleSources.value.filter(s => s.enabled))
 
     // 使用 price 作为 sales 替代的数据源列表
-    const priceBasedSources = ['Fashionphile', 'eBay', 'KOMEHYO', 'Rebag', 'Vestiaire Collective', 'Chrono24', 'Grailed', 'Poshmark', 'MercariUS', 'ALLU', 'Mejuri']
+    const priceBasedSources = ['Fashionphile', 'eBay', 'KOMEHYO', 'Rebag', 'Vestiaire Collective', 'Chrono24', 'Grailed', 'Poshmark', 'MercariUS', 'ALLU', 'Mejuri', 'Rodeo Drive', 'WATCHNIAN']
 
     const maxSales = computed(() => {
       if (data.value.length === 0) return 0
@@ -1128,16 +1118,6 @@ export default {
   color: rgba(255, 255, 255, 0.5);
 }
 
-.rank-card-badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
-  min-width: 40px;
-  text-align: right;
-  flex-shrink: 0;
-  transition: color 0.3s;
-}
 .rank-card-badge.rank-gold {
   color: #d4a574;
 }
@@ -1222,16 +1202,6 @@ export default {
   color: rgba(255, 255, 255, 0.5);
 }
 
-.rank-row-badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.3);
-  min-width: 48px;
-  text-align: right;
-  flex-shrink: 0;
-  transition: color 0.3s;
-}
 .rank-row-badge.rank-gold {
   color: #d4a574;
 }
@@ -1292,7 +1262,6 @@ export default {
   .control-group label { display: none; }
   .stats-row { grid-template-columns: 1fr; }
   .rank-grid { grid-template-columns: 1fr; }
-  .rank-card-badge, .rank-row-badge { font-size: 1.3rem; min-width: 32px; }
   .col-brand { display: none; }
 }
 </style>

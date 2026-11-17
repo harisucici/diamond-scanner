@@ -2,7 +2,9 @@ import { load } from 'cheerio'
 
 export const PUBLIC_CATALOGS = {
   allu: { name: 'ALLU', table: 'allu_products', url: 'https://allu-official.com/jp/ja/market/b/c-83/', currency: 'JPY' },
-  mejuri: { name: 'Mejuri', table: 'mejuri_products', url: 'https://mejuri.com/tw/en/collections/necklaces', currency: 'TWD' }
+  mejuri: { name: 'Mejuri', table: 'mejuri_products', url: 'https://mejuri.com/tw/en/collections/necklaces', currency: 'TWD' },
+  rodeo: { name: 'Rodeo Drive', table: 'rodeo_products', url: 'https://www.rodeodrive.co.jp/shop/c~jewelry', currency: 'JPY', pages: 2 },
+  watchnian: { name: 'WATCHNIAN', table: 'watchnian_products', url: 'https://watchnian.com/shop/r/rjewelry/?filtercode13=1', currency: 'JPY', pages: 2 }
 }
 
 export function parseCatalog(source, html) {
@@ -10,12 +12,13 @@ export function parseCatalog(source, html) {
   if (!config) throw new Error('Unknown catalog')
   const $ = load(html)
   const items = new Map()
-  const cards = source === 'allu' ? $('a[href*="/market/items/"]') : $('[data-testid="product-card"]')
+  const cards = $({ allu: 'a[href*="/market/items/"]', mejuri: '[data-testid="product-card"]', rodeo: '.listitem', watchnian: '.block-thumbnail-t--goods' }[source])
   cards.each((_, element) => {
     const card = $(element)
-    const link = source === 'allu' ? card : card.find('a[aria-label][href*="/products/"]').first()
-    const productName = source === 'allu' ? card.find('.p-productsSimilar__info__ttl').text().trim() : link.attr('aria-label')?.trim()
-    const priceText = source === 'allu' ? card.find('.p-productsSimilar__info__price').text() : card.find('[data-testid="sale-price"]').first().text()
+    const linkSelector = { mejuri: 'a[aria-label][href*="/products/"]', rodeo: 'a.listitem_image', watchnian: 'a[href*="/shop/g/"]' }[source]
+    const link = source === 'allu' ? card : card.find(linkSelector).first()
+    const productName = source === 'allu' ? card.find('.p-productsSimilar__info__ttl').text().trim() : (source === 'mejuri' ? link.attr('aria-label') : link.attr('title'))?.trim()
+    const priceText = card.find({ allu: '.p-productsSimilar__info__price', mejuri: '[data-testid="sale-price"]', rodeo: '.listitem_price strong', watchnian: '.block-thumbnail-t--price .num' }[source]).first().text()
     const price = Number(priceText.replace(/[^\d.]/g, ''))
     const href = link.attr('href')
     if (!productName || !href || !priceText.trim() || !Number.isFinite(price) || price <= 0) return
@@ -23,12 +26,15 @@ export function parseCatalog(source, html) {
     if (url.origin !== new URL(config.url).origin) return
     // Variants may repeat within a listing; retain each distinct displayed product.
     url.hash = ''
-    const image = card.find('img[src]').first().attr('src')
+    // Product links contain the real image; the card may start with a condition icon.
+    const imageElement = (source === 'rodeo' || source === 'watchnian' ? link : card).find('img').first()
+    const image = imageElement.attr('data-src') || imageElement.attr('src')
+    const condition = source === 'rodeo' ? (productName.match(/【([^】]+)】/)?.[1] || '') : source === 'watchnian' ? card.find('.block-thumbnail-t--conditions').text().replace(/\s+/g, ' ').trim() : ''
     items.set(url.href, {
       productName, price, currency: config.currency, url: url.href,
       imageUrl: image ? new URL(image, config.url).href : '',
       brand: source === 'mejuri' ? 'Mejuri' : inferAlluBrand(productName),
-      condition: '',
+      condition,
     })
   })
   return [...items.values()].map((item, index) => ({ ...item, rank: index + 1 }))
@@ -41,18 +47,26 @@ function inferAlluBrand(name) {
     ['シャネル', 'Chanel'], ['エルメス', 'Hermès'], ['グッチ', 'Gucci'],
     ['タサキ', 'Tasaki'], ['ミキモト', 'Mikimoto'], ['ブシュロン', 'Boucheron']
   ]
-  return brands.find(([label]) => name.includes(label))?.[1] || 'OTHER'
+  return brands.find(([label]) => name.replace(/\s+/g, '').includes(label))?.[1] || 'OTHER'
 }
 
-export async function fetchPublicCatalog(source, { fetchImpl = fetch, pages = source === 'allu' ? 2 : 1 } = {}) {
+export function catalogPageUrl(source, page) {
+  const url = new URL(PUBLIC_CATALOGS[source].url)
+  if (page > 1) {
+    if (source === 'rodeo' || source === 'watchnian') url.pathname = `${url.pathname.replace(/\/$/, '')}_p${page}/`
+    else url.searchParams.set('page', page)
+  }
+  return url
+}
+
+export async function fetchPublicCatalog(source, { fetchImpl = fetch, pages = PUBLIC_CATALOGS[source]?.pages || (source === 'allu' ? 2 : 1) } = {}) {
   const config = PUBLIC_CATALOGS[source]
   if (!config) throw new Error('Unknown catalog')
   const unique = new Map()
   for (let page = 1; page <= pages; page++) {
-    const url = new URL(config.url)
-    if (page > 1) url.searchParams.set('page', page)
+    const url = catalogPageUrl(source, page)
     const response = await fetchImpl(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html', 'Accept-Language': source === 'allu' ? 'ja-JP,ja;q=0.9' : 'en-US,en;q=0.9' },
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/html', 'Accept-Language': config.currency === 'JPY' ? 'ja-JP,ja;q=0.9' : 'en-US,en;q=0.9' },
       signal: AbortSignal.timeout(25000)
     })
     if (!response.ok) throw new Error(`${config.name}: HTTP ${response.status}，保留已有数据`)

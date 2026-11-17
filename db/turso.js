@@ -43,6 +43,8 @@ export const TABLES = {
 
   ALLU_PRODUCTS: 'allu_products',
   MEJURI_PRODUCTS: 'mejuri_products',
+  RODEO_PRODUCTS: 'rodeo_products',
+  WATCHNIAN_PRODUCTS: 'watchnian_products',
   SOCIAL_TIKTOK: 'social_tiktok',
   SOCIAL_INSTAGRAM: 'social_instagram',
   SOCIAL_SUMMARY: 'social_summary',
@@ -576,7 +578,7 @@ TABLE_SCHEMAS[TABLES.SOCIAL_SUMMARY] = `CREATE TABLE IF NOT EXISTS social_summar
 )`
 
 // Public catalogs share the same snapshot fields; existing platform tables remain intact.
-for (const table of [TABLES.ALLU_PRODUCTS, TABLES.MEJURI_PRODUCTS]) {
+for (const table of [TABLES.ALLU_PRODUCTS, TABLES.MEJURI_PRODUCTS, TABLES.RODEO_PRODUCTS, TABLES.WATCHNIAN_PRODUCTS]) {
   TABLE_SCHEMAS[table] = `CREATE TABLE IF NOT EXISTS ${table} (
     id TEXT PRIMARY KEY, rank INTEGER, month TEXT, productName TEXT, brand TEXT,
     price REAL, currency TEXT, condition TEXT, imageUrl TEXT, url TEXT, created_at TEXT
